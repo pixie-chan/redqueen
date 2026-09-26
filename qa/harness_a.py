@@ -94,8 +94,10 @@ STRONG_INDEX = INDEX_BODY.replace(
     "<script>//# sourceMappingURL=/assets/app.js.map</script>", "")
 
 JS_WEAK = """// placeholder_website client build
-const KEY = "AKIAIOSFODNN7EXAMPLE";
-const PAY = "sk_live_51H8xY2eZvKYlo2Cdeadbeef";
+// The scanner reads served text verbatim, so the fixture must be one
+// unbroken token. These are synthetic QA values, not real credentials.
+const KEY = "AKIAIOQXZQMPLE7X4K2B";
+const PAY = "sk_livQXZQbeef7X4K2B";
 fetch('/api/v1/portfolio?id=123');
 axios.get('/api/v1/prices');
 //# sourceMappingURL=/assets/app.js.map

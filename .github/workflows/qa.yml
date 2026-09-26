@@ -1,0 +1,77 @@
+name: qa
+
+# The QA suite is the release gate: 60 assertion gates over the scanner
+# against a local vulnerable harness. Nothing merges without it.
+on:
+  push:
+    branches: [trunk]
+  pull_request:
+    branches: [trunk]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # no dependencies to install: redteam.py is stdlib only by design
+
+      - name: Build the single file from parts
+        run: ./build.sh
+
+      # the project supports 3.10+; the report f-strings once broke on <3.12,
+      # so a compile matrix is the cheapest regression guard against that
+      - name: Compile on every supported interpreter
+        run: |
+          set -e
+          for v in 3.10 3.11 3.12 3.13; do
+            echo "== python $v"
+            if ! uv python find "$v" >/dev/null 2>&1; then
+              uv python install "$v"
+            fi
+            PY="$(uv python find "$v")"
+            echo "   using $PY"
+            "$PY" -m py_compile redteam.py
+          done
+
+      - name: Run the QA suite
+        run: python3 qa/qa.py
+
+      - name: House rules
+        run: python3 docs/house-rules.py
+
+      - name: Docs numbers match the artifact
+        run: |
+          set -e
+          # the sync script rewrites the docs in place, so compare against a
+          # pristine copy: run it, then require no CHANGE
+          cp README.md /tmp/README.before
+          cp docs/ARCHITECTURE.md /tmp/ARCH.before
+          cp docs/build-arch-html.py /tmp/GEN.before
+          python3 docs/sync-doc-numbers.py
+          for f in README.md:/tmp/README.before \
+                   docs/ARCHITECTURE.md:/tmp/ARCH.before \
+                   docs/build-arch-html.py:/tmp/GEN.before ; do
+            cur="${f%%:*}"; was="${f##*:}"
+            if ! cmp -s "$cur" "$was"; then
+              echo "docs drifted from the built artifact: $cur" >&2
+              diff -u "$was" "$cur" || true
+              exit 1
+            fi
+          done
+
+      - name: Surface inventory
+        run: python3 redteam.py --list-checks

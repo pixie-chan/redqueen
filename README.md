@@ -81,7 +81,7 @@ packet leaves your machine, and the report ships even if the scan stops early.
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"fontFamily":"DejaVu Sans, Helvetica, sans-serif","fontSize":"14px","lineColor":"#64748b","clusterBkg":"#f8fafc","clusterBorder":"#cbd5e1"}}}%%
 flowchart TD
-    T["SCAN PIPELINE · redteam.py v1.1.0<br/>blue engine · amber gate · red blocked<br/>orange degraded · violet output"]:::title ~~~ A(["CLI invocation<br/>target · allow · scenario · flags"]):::cli
+    T["SCAN PIPELINE · redteam.py v2.0.0<br/>blue engine · amber gate · red blocked<br/>orange degraded · violet output"]:::title ~~~ A(["CLI invocation<br/>target · allow · scenario · flags"]):::cli
     A --> G{"scope gate<br/>host in allowlist?"}:::gate
     G -->|no| K(["request never sent"]):::bad
     G -->|"in scope, no flag"| P["passive mode<br/>recon groups only"]:::neutral
@@ -124,7 +124,7 @@ Six focused diagrams, rendered images, Mermaid source in each `.mmd`:
 |---|---------|---------------|
 | 1 | [Run flow](docs/diagrams/01-run-flow.png) | what happens when you execute one scan |
 | 2 | [Discovery engine](docs/diagrams/02-discovery-engine.png) | 3 crawl passes + passive sources |
-| 3 | [Codebase](docs/diagrams/03-codebase.png) | 12 build slices into one file, QA feeding examples |
+| 3 | [Codebase](docs/diagrams/03-codebase.png) | 15 build slices into one file, QA feeding examples |
 | 4 | [Check engine](docs/diagrams/04-check-engine.png) | registry, groups, scenarios, verify, score |
 | 5 | [Safety rails](docs/diagrams/05-safety-rails.png) | the gates every request passes, forbidden payloads |
 | 6 | [QA loop](docs/diagrams/06-qa-loop.png) | harness modes into 16 assertion gates |
@@ -170,6 +170,9 @@ Built into the engine, not into the documentation.
 | `injection` | XSS, SQLi (error + boolean differential), command injection, traversal, open redirect |
 | `auth` | admin/authz force-browsing, CSRF posture, login rate limit, JWT checks, dangling subdomains |
 | `api` | recon + exposures + CORS + injection (API-focused sweep) |
+| `anomaly` | **Tier A**: baselines every route, then fires differential probes and reports *anomalies* (see below). Add `--anomaly` to layer it onto any other scenario |
+| `tierb` | **Tier B**: empty-taxonomy hunting, desync cells (CL/TE/0/H2), Unicode normalization oracles, delimiter confusion, API state walk. Opt-in per module: `--desync-probe` |
+| `tierc` | **Tier C**: research dossiers. Sends nothing at all. `--tierc-candidates FILE`, `--tierc-from-anomalies` |
 | `full` | everything (default) |
 
 ---
@@ -187,7 +190,7 @@ Severity legend:
 | <img src="https://img.shields.io/badge/-INFO-7d8590" height="20" alt="info"> | observation | free |
 
 <details>
-<summary><b>🔐 Headers and framing (13 checks)</b></summary>
+<summary><b>🔐 Headers and framing (69 checks)</b></summary>
 
 - HSTS missing · CSP missing · CSP allows unsafe-inline/eval
 - X-Content-Type-Options missing · Referrer-Policy missing
@@ -198,7 +201,7 @@ Severity legend:
 </details>
 
 <details>
-<summary><b>🌐 CORS and transport (7 checks)</b></summary>
+<summary><b>🌐 CORS and transport (69 checks)</b></summary>
 
 - arbitrary Origin reflection (escalates with credentials) · null origin trusted
 - wildcard CORS on authenticated endpoints · plain HTTP served
@@ -207,7 +210,7 @@ Severity legend:
 </details>
 
 <details>
-<summary><b>🍪 Session and JWT (10 checks)</b></summary>
+<summary><b>🍪 Session and JWT (69 checks)</b></summary>
 
 - cookie missing Secure · missing HttpOnly · missing SameSite
 - SameSite=None without Secure · session cookie over plain HTTP
@@ -226,7 +229,7 @@ never printed.
 </details>
 
 <details>
-<summary><b>💾 Exposures (14 checks)</b></summary>
+<summary><b>💾 Exposures (69 checks)</b></summary>
 
 - .git/HEAD and .git/config · .env · .env.local/.env.production
 - backup archives (zip/tar/sql magic) · config files · dependency manifests
@@ -239,7 +242,7 @@ never printed.
 </details>
 
 <details>
-<summary><b>💉 Injection (6 checks)</b></summary>
+<summary><b>💉 Injection (69 checks)</b></summary>
 
 - reflected XSS (unique canary, context-aware confirmation)
 - SQL injection via database error signatures
@@ -250,7 +253,7 @@ never printed.
 </details>
 
 <details>
-<summary><b>🛡️ AuthZ and abuse (5 checks)</b></summary>
+<summary><b>🛡️ AuthZ and abuse (69 checks)</b></summary>
 
 - admin and authenticated surfaces reachable without login
 - CSRF token missing on state-changing forms
@@ -260,7 +263,7 @@ never printed.
 </details>
 
 <details>
-<summary><b>🧩 Client, methods and recon (7 checks)</b></summary>
+<summary><b>🧩 Client, methods and recon (69 checks)</b></summary>
 
 - third-party script without Subresource Integrity
 - mixed content on HTTPS pages · HTTP TRACE enabled
@@ -435,7 +438,7 @@ restored once).
 ---
 
 <p align="center">
-  <b>redteam.py v2.0.0</b> · 4,560 lines · stdlib only · 69 checks · 60/60 QA gates<br>
+  <b>redteam.py v2.0.0</b> · 4,560 · stdlib only · 69 checks · 60/60 QA gates<br>
   built on OWASP Top 10:2025, OWASP WSTG, OWASP Cheat Sheets, PortSwigger Academy,
   NIST SP 800-115, PTES
 </p>

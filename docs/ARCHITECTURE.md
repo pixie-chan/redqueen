@@ -1,4 +1,4 @@
-# redteam.py v1.1.0 · Architecture
+# redteam.py v2.0.0 · Architecture
 
 How the bot works and how its codebase is put together. Six focused diagrams,
 each with one claim.
@@ -21,13 +21,13 @@ Scope gate first, reports always ship, even on early stop.
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"fontFamily":"DejaVu Sans, Helvetica, sans-serif","fontSize":"14px","lineColor":"#64748b","clusterBkg":"#f8fafc","clusterBorder":"#cbd5e1"}}}%%
 flowchart TD
-    T["SCAN PIPELINE · redteam.py v1.1.0<br/>blue engine · amber gate · red blocked<br/>orange degraded · violet output"]:::title ~~~ A(["CLI invocation<br/>target · allow · scenario · flags"]):::cli
+    T["SCAN PIPELINE · redteam.py v2.0.0<br/>blue engine · amber gate · red blocked<br/>orange degraded · violet output"]:::title ~~~ A(["CLI invocation<br/>target · allow · scenario · flags"]):::cli
     A --> G{"scope gate<br/>host in allowlist?"}:::gate
     G -->|no| K(["request never sent"]):::bad
     G -->|"in scope, no flag"| P["passive mode<br/>recon groups only"]:::neutral
     G -->|yes| T2["Transport<br/>5 req/s + jitter · budget 500<br/>1 retry · redirect re-check"]:::engine
     T2 --> D["Discovery<br/>3 passes + optional sources"]:::engine
-    D --> R["Runners<br/>12 groups · 63 checks"]:::engine
+    D --> R["Runners<br/>13 groups · 69 checks"]:::engine
     R --> V{"verify pass<br/>CRITICAL or HIGH?"}:::gate
     V -->|reproduced| Z["dedupe + score / 100"]:::engine
     V -->|"not reproduced"| DN["downgrade one level<br/>confidence low"]:::warn
@@ -81,7 +81,7 @@ flowchart LR
     classDef forbidden fill:#ffe4e6,stroke:#e11d48,color:#0f172a,stroke-dasharray:6 4
 ```
 
-## 3. Codebase · 12 build slices assemble into one dependency-free file
+## 3. Codebase · 15 build slices assemble into one dependency-free file
 
 | Layer | Files | Lines |
 |---|---|---|
