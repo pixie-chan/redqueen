@@ -139,14 +139,25 @@ def bot_args(**over):
 
 
 def gen_cert():
+    """Mint a fresh short-lived self-signed cert for the TLS gate.
+
+    Always regenerated, never reused: a cached cert from a previous day stops
+    being near expiry and the tls-expiry check (which fires at <=21 days) then
+    depends on when the suite last ran. A 3-day cert keeps the fixture inside
+    the window on every run, on this machine and on CI.
+    """
     here = os.path.dirname(os.path.abspath(__file__))
     cert = os.path.join(here, "cert.pem")
-    if os.path.exists(cert):
-        return
+    key = os.path.join(here, "key.pem")
+    for f in (cert, key):
+        try:
+            os.unlink(f)
+        except FileNotFoundError:
+            pass
     subprocess.run(
-        ["openssl", "req", "-x509", "-newkey", "rsa:2048", "-keyout",
-         os.path.join(here, "key.pem"), "-out", cert, "-days", "10", "-nodes",
-         "-subj", "/CN=127.0.0.1"], check=True, capture_output=True)
+        ["openssl", "req", "-x509", "-newkey", "rsa:2048", "-keyout", key,
+         "-out", cert, "-days", "3", "-nodes", "-subj", "/CN=127.0.0.1"],
+        check=True, capture_output=True)
 
 
 def main():
