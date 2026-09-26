@@ -500,7 +500,7 @@ FIGS = [
      "Three passes feed one store: linked surface, JavaScript-mined API routes, "
      "then optional read-only historical and certificate sources.", fig2),
     ("fig3", "FIG.03", "Codebase",
-     "15 build slices, one assembly step, one artifact of 4,560; "
+     "15 build slices, one assembly step, one artifact of 4,601; "
      "every layer is proven by the QA gate it feeds.", fig3),
     ("fig4", "FIG.04", "Check engine",
      "One registry drives groups, scenarios and fixes; only re-tested "
@@ -651,11 +651,11 @@ together.">
   <h1>How redteam.py works</h1>
   <p class="lede">Six figures, one claim each: a scope-gated scan pipeline
   throttled to 5 req/s, a three-pass discovery engine, twelve slices assembling
-  into one dependency-free file of 4,560, a registry-driven check engine,
+  into one dependency-free file of 4,601, a registry-driven check engine,
   rails that make destructive payloads unreachable, and a QA gate that blocks
   any release it cannot prove.</p>
   <div class="meta">
-    <span><b>v2.0.0</b></span><span><b>4,560</b> lines</span>
+    <span><b>v2.0.0</b></span><span><b>4,601</b> lines</span>
     <span><b>69</b> checks</span><span><b>60/60</b> QA gates</span>
     <span><b>0</b> dependencies</span><span>stdlib only</span>
   </div>

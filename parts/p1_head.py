@@ -10,6 +10,7 @@ budget, gentle rate limit, benign payloads only, no brute force, no DoS.
 
 import argparse
 import base64
+import calendar
 import difflib
 import gzip
 import hashlib

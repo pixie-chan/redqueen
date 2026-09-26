@@ -438,7 +438,7 @@ restored once).
 ---
 
 <p align="center">
-  <b>redteam.py v2.0.0</b> · 4,560 · stdlib only · 69 checks · 60/60 QA gates<br>
+  <b>redteam.py v2.0.0</b> · 4,601 · stdlib only · 69 checks · 60/60 QA gates<br>
   built on OWASP Top 10:2025, OWASP WSTG, OWASP Cheat Sheets, PortSwigger Academy,
   NIST SP 800-115, PTES
 </p>

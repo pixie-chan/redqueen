@@ -10,6 +10,7 @@ budget, gentle rate limit, benign payloads only, no brute force, no DoS.
 
 import argparse
 import base64
+import calendar
 import difflib
 import gzip
 import hashlib
@@ -1614,6 +1615,40 @@ def check_jwt(bot):
                 pass
 
 
+def _not_after_from_der(der):
+    """notAfter from a DER certificate, stdlib only.
+
+    ssl._ssl._test_decode_cert needs a FILE, and there is no trusted path
+    here, so the validity end date is read straight out of the DER bytes.
+    Layout: SEQUENCE { tbsCertificate, signatureAlgorithm, signatureValue }
+    and inside tbsCertificate the validity SEQUENCE holds two INTEGERs
+    (notBefore, notAfter) in UTCTime or GeneralizedTime form.
+    """
+    # validity carries notBefore then notAfter, so take the LAST time found
+    stamps = []
+    for tag, ln, off in ((b"\x17\x0d", 13, 0), (b"\x18\x0f", 15, 0)):
+        pos = 0
+        while True:
+            i = der.find(tag, pos)
+            if i == -1:
+                break
+            stamps.append(der[i + 2:i + 2 + ln].decode("ascii", "replace"))
+            pos = i + 1
+    if len(stamps) < 2:
+        raise ValueError("certificate validity times not found")
+    raw = stamps[1]                      # notAfter, the second one
+    if len(raw) == 13:                   # UTCTime YYMMDDHHMMSSZ
+        yy = int(raw[0:2])
+        year = 2000 + yy if yy < 50 else 1900 + yy
+        mon, day = int(raw[2:4]), int(raw[4:6])
+        hh, mm, ss = int(raw[6:8]), int(raw[8:10]), int(raw[10:12])
+    else:                                # GeneralizedTime YYYYMMDDHHMMSSZ
+        year = int(raw[0:4])
+        mon, day = int(raw[4:6]), int(raw[6:8])
+        hh, mm, ss = int(raw[8:10]), int(raw[10:12]), int(raw[12:14])
+    return calendar.timegm((year, mon, day, hh, mm, ss, 0, 0, 0))
+
+
 def check_tls(bot):
     if bot.t.scheme == "http":
         bot.add("no-tls", url=bot.t.base + bot.t.path,
@@ -1642,16 +1677,22 @@ def check_tls(bot):
                     evidence=f"CN {subj.get('commonName')} SANs {sans[:5]}")
     except ssl.SSLCertVerificationError as e:
         bot.add("tls-unverified", url=bot.t.base, evidence=str(e)[:200])
+        # A self-signed or otherwise untrusted cert still has an expiry the
+        # owner must act on. Read it with the stdlib only: this project has no
+        # third-party dependencies, so cryptography is NOT an option here.
         try:
-            pem = ssl.get_server_certificate((host, port))
-            from cryptography import x509
-            cert = x509.load_pem_x509_certificate(pem.encode())
-            days = (cert.not_valid_after_utc.timestamp() - time.time()) / 86400
+            der = ssl.PEM_cert_to_DER_cert(
+                ssl.get_server_certificate((host, port)))
+            # the helper already returns epoch seconds, so do not feed it
+            # back through ssl.cert_time_to_seconds, which wants a date string
+            not_after = _not_after_from_der(der)
+            days = (not_after - time.time()) / 86400
             if days <= 21:
                 bot.add("tls-expiry", url=bot.t.base,
                         severity="HIGH" if days <= 7 else "MEDIUM",
-                        evidence=f"notAfter {cert.not_valid_after_utc.isoformat()} "
-                                 f"({int(days)} days left)", verify=lambda: True)
+                        evidence=f"notAfter in {int(days)} day(s), "
+                                 f"certificate is untrusted AND expiring",
+                        verify=lambda: True)
         except Exception as e2:
             bot.note(f"certificate expiry unreadable: {e2}")
         return
