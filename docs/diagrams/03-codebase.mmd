@@ -1,0 +1,19 @@
+flowchart TD
+    A1["parts/p1 head + constants (70)"] --> A2["parts/p2a CHECKS registry (81)"]
+    A2 --> A2b["parts/p2b registry + groups + scenarios (145)"]
+    A2b --> A3["parts/p3 Transport: scope, throttle, retry (226)"]
+    A3 --> A4["parts/p4 Bot engine: discovery, JS mining, wayback, ct-log (418)"]
+    A4 --> A5["parts/p5 headers, CORS, cookies, JWT, host (229)"]
+    A5 --> A6["parts/p6 TLS, exposures, GraphQL (175)"]
+    A6 --> A7["parts/p7 injection, methods, stack traces (205)"]
+    A7 --> A8["parts/p8 secrets, auth, CSRF, rate limit (193)"]
+    A8 --> A9["parts/p9 terminal, JSON, checklist (108)"]
+    A9 --> A10["parts/p10 HTML report (156)"]
+    A10 --> A11["parts/p11 CLI + runners (149)"]
+    A11 --> BS["build.sh: ordered cat + compile check"]
+    BS --> RT["redteam.py: 2155 lines, stdlib only"]
+    RT --> Q["qa/qa.py: 16 assertion gates"]
+    H["qa/qx_harness.py (397): weak / strong / TLS target"] --> Q
+    U["qa/unit_sources.py (78): network stubbed"] --> Q
+    Q --> EX["examples/: sample reports + checklist"]
+    RES["research/redteam-bot/: 150+ sources"] -. grounding .-> RT

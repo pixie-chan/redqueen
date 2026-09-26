@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.pyo
+rt-report-*/
+qa/cert.pem
+qa/key.pem
+.DS_Store

@@ -1,0 +1,18 @@
+flowchart LR
+    subgraph TG["qx_harness.py, local only"]
+        W1["weak mode:<br/>54 findings planted"]
+        S1["strong mode:<br/>hardened"]
+        T1["weak + TLS:<br/>self-signed, 10 day cert"]
+    end
+    W1 --> RA["run: scenario full"]
+    S1 --> RB["run: scenario full"]
+    T1 --> RC["run: scenario headers"]
+    PG["run: passive<br/>no --i-own-this"] --> RD
+    UN["unit_sources.py<br/>network stubbed"] --> RE
+    RA --> GT["qa.py<br/>16 assertion gates"]
+    RB --> GT
+    RC --> GT
+    RD --> GT
+    RE --> GT
+    GT --> OKG["ALL PASS<br/>exit 0, samples refreshed"]
+    GT -- "any miss" --> FL["QA_RC=1, release blocked"]

@@ -1,0 +1,14 @@
+flowchart TD
+    R["CHECKS registry<br/>id to OWASP, severity, impact, exact fix<br/>63 entries"] --> G["GROUPS<br/>12 groups"]
+    G --> SC["SCENARIOS<br/>recon, headers, misconfig,<br/>injection, auth, api, full"]
+    SC --> RN["RUNNERS dispatch"]
+    RN --> F1["check_* functions<br/>call bot.get()"]
+    F1 --> AD["bot.add()<br/>dedupe key: check + path + param,<br/>secrets redacted"]
+    AD --> VF{"verify pass<br/>CRITICAL or HIGH?"}
+    VF -- "re-tested" --> OK["verified"]
+    VF -- "not reproduced" --> DN["downgrade one level,<br/>confidence low"]
+    VF -- "lower severity" --> F2["findings[]"]
+    OK --> F2
+    DN --> F2
+    F2 --> SC2["score = 100 minus<br/>weighted severities"]
+    F2 --> O["terminal, HTML,<br/>JSON, CHECKLIST.md"]

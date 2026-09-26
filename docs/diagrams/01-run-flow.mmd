@@ -1,0 +1,12 @@
+flowchart TD
+    A["CLI<br/>--target --allow --i-own-this<br/>--scenario --wayback --ct-log"] --> G{"scope gate<br/>host in allowlist?"}
+    G -- "no" --> K["request never sent"]
+    G -- "no --i-own-this" --> P["passive mode<br/>recon groups only"]
+    G -- "yes" --> T["Transport<br/>5 req/s + jitter, budget 500,<br/>1 retry, redirect re-check"]
+    T --> D["Discovery<br/>3 passes + optional passive sources"]
+    D --> R["Scenario runners<br/>12 check groups, 63 checks"]
+    R --> V["Verify pass<br/>CRITICAL/HIGH re-tested once"]
+    V --> Z["Dedupe + score out of 100"]
+    Z --> O["terminal + report.html<br/>+ report.json + CHECKLIST.md"]
+    P --> O
+    K --> O

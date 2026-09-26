@@ -1,0 +1,12 @@
+flowchart TD
+    Q["outgoing request"] --> G1{"host matches<br/>--allow?"}
+    G1 -- "no" --> K1["blocked: never sent"]
+    G1 -- "yes" --> G2{"budget left?"}
+    G2 -- "no" --> K2["BudgetExceeded:<br/>stop, report ships"]
+    G2 -- "yes" --> G3["throttle<br/>5 req/s + jitter"]
+    G3 --> G4{"robots disallow?<br/>(crawl phase)"}
+    G4 -- "yes" --> K3["path skipped"]
+    G4 -- "no" --> PL["payload policy"]
+    PL --> OKA["ALLOWED<br/>canaries, echo markers,<br/>error signatures, benign GET/POST"]
+    PL --> NOA["NOT IMPLEMENTED<br/>DoS, brute force, data writes,<br/>destructive SQL, shell exec"]
+    OWN["--i-own-this required<br/>for active groups"] -. gates .-> G1

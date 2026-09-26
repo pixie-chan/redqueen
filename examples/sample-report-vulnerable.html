@@ -1,0 +1,816 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Red team report · 127.0.0.1</title>
+<style>
+:root{--bg:#0b0e13;--panel:#12161d;--ink:#d7dde6;--mut:#8b94a3;--line:#232a35;
+--cr:#ff2d55;--hi:#ff6b35;--me:#ffb020;--lo:#4aa3ff;--in:#7d8590;--acc:#39d98a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+font:15px/1.6 "DejaVu Sans Mono",Consolas,monospace}
+.wrap{max-width:1040px;margin:0 auto;padding:34px 26px 80px}
+header.top{border-bottom:1px solid var(--line);padding-bottom:22px;margin-bottom:26px}
+.kicker{color:var(--acc);font-size:12px;letter-spacing:.22em;text-transform:uppercase}
+h1{font-size:26px;margin:8px 0 6px;font-weight:700}
+.meta{color:var(--mut);font-size:12.5px}
+.meta b{color:var(--ink)}
+.grid{display:grid;grid-template-columns:270px 1fr;gap:26px;align-items:start}
+@media(max-width:760px){.grid{grid-template-columns:1fr}}
+.scoreoxed{background:var(--panel);border:1px solid var(--line);padding:22px}
+.score{font-size:64px;font-weight:700;line-height:1}
+.score small{font-size:18px;color:var(--mut)}
+.bar{height:10px;background:#1b212b;margin:16px 0 14px;position:relative}
+.bar i{position:absolute;inset:0 auto 0 0;display:block}
+.sevrow{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+.chip{font-size:11.5px;padding:3px 9px;border:1px solid var(--line);color:var(--ink)}
+h2{font-size:13px;letter-spacing:.18em;text-transform:uppercase;color:var(--mut);
+margin:34px 0 12px;border-bottom:1px solid var(--line);padding-bottom:7px}
+.narr{background:var(--panel);border-left:3px solid var(--acc);padding:14px 18px;
+margin-bottom:10px}
+.narr b{color:var(--acc)}
+.narr div{color:var(--mut);font-size:13px;margin-top:4px}
+details.f{background:var(--panel);border:1px solid var(--line);border-left-width:4px;
+margin-bottom:9px}
+details.f summary{cursor:pointer;padding:11px 15px;display:flex;gap:12px;
+align-items:baseline;list-style:none}
+details.f summary::-webkit-details-marker{display:none}
+.tag{font-size:10.5px;padding:2px 7px;color:#0b0e13;font-weight:700;white-space:nowrap}
+.ftitle{font-weight:700}
+.fmeta{color:var(--mut);font-size:12px;margin-left:auto;white-space:nowrap}
+.fbody{padding:0 15px 15px;border-top:1px solid var(--line);margin-top:2px;
+padding-top:12px}
+.fbody dt{color:var(--mut);font-size:11px;letter-spacing:.14em;
+text-transform:uppercase;margin-top:10px}
+.fbody dd{margin:3px 0 0}
+pre{background:#0e1218;border:1px solid var(--line);padding:10px 12px;overflow:auto;
+font-size:12.5px;white-space:pre-wrap;word-break:break-all}
+.fix{color:var(--acc)}
+a{color:var(--lo)}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+th{color:var(--mut);font-weight:600;font-size:11.5px;letter-spacing:.1em;
+text-transform:uppercase}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+@media(max-width:760px){.two{grid-template-columns:1fr}}
+.muted{color:var(--mut);font-size:13px}
+.ok{color:var(--acc)}.bad{color:var(--cr)}
+.filt{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px}
+.filt button{background:var(--panel);color:var(--ink);border:1px solid var(--line);
+padding:5px 13px;font:12px/1 "DejaVu Sans Mono",monospace;cursor:pointer;
+letter-spacing:.08em}
+.filt button.on{border-color:var(--acc);color:var(--acc)}
+</style></head><body><div class="wrap">
+<header class="top">
+<div class="kicker">authorized self-assessment · redteam.py v1.1.0</div>
+<h1>Attack simulation report</h1>
+<div class="meta">target <b>http://127.0.0.1:8931/</b> ·
+scope <b>127.0.0.1</b> ·
+scenario <b>full</b> ·
+finished <b>2026-09-25T18:06:58+00:00</b> UTC ·
+requests <b>148/400</b></div>
+</header>
+<div class="grid">
+<div class="scorebox">
+<div class="kicker">security score</div>
+<div class="score" style="color:var(--cr)">0.0<small>/100</small></div>
+<div class="bar"><i style="width:0.0%;background:var(--cr)"></i></div>
+<div class="sevrow"><span class="chip" style="border-color:var(--cr);color:var(--cr)">7 CRITICAL</span><span class="chip" style="border-color:var(--hi);color:var(--hi)">14 HIGH</span><span class="chip" style="border-color:var(--me);color:var(--me)">20 MEDIUM</span><span class="chip" style="border-color:var(--lo);color:var(--lo)">10 LOW</span><span class="chip" style="border-color:var(--in);color:var(--in)">3 INFO</span></div>
+<p class="muted">weighted: critical −25, high −12, medium −5, low −2;
+unverified critical/high count half.</p>
+</div>
+<div>
+<h2>Attacker narrative</h2>
+<div class="narr"><b>1. OS command injection</b> (CRITICAL, A05)<div>the attacker runs arbitrary commands on your server, total compromise</div></div><div class="narr"><b>2. Cloud credentials file exposed</b> (CRITICAL, A02)<div>your cloud account is directly compromiseable</div></div><div class="narr"><b>3. Environment file exposed</b> (CRITICAL, A02)<div>API keys, DB passwords and tokens are handed over in one request</div></div>
+<h2>Findings (54)</h2>
+<div class="filt"><button class='on' onclick="ff('ALL',this)">ALL</button><button class='' onclick="ff('CRITICAL',this)">CRITICAL</button><button class='' onclick="ff('HIGH',this)">HIGH</button><button class='' onclick="ff('MEDIUM',this)">MEDIUM</button><button class='' onclick="ff('LOW',this)">LOW</button><button class='' onclick="ff('INFO',this)">INFO</button>
+</div>
+<details class="f" data-sev="CRITICAL"
+ style="border-left-color:var(--cr)">
+<summary><span class="tag" style="background:var(--cr)">CRITICAL</span>
+<span class="ftitle">OS command injection</span>
+<span class="fmeta">A05 · cmdi-echo ·
+verified</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/search?q=hello · param q</dd>
+<dt>Why it matters</dt><dd>the attacker runs arbitrary commands on your server, total compromise</dd>
+
+<dt>Evidence</dt><dd><pre>server echoed injected marker QX608665b8af without the command text (separator &#x27;; echo&#x27;)</pre></dd>
+<dt>Exact fix</dt><dd class="fix">never pass input to a shell; call fixed executables with argument arrays, allowlist inputs</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A05_2025-Injection/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="CRITICAL"
+ style="border-left-color:var(--cr)">
+<summary><span class="tag" style="background:var(--cr)">CRITICAL</span>
+<span class="ftitle">Cloud credentials file exposed</span>
+<span class="fmeta">A02 · exp-aws ·
+verified</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/.aws/credentials</dd>
+<dt>Why it matters</dt><dd>your cloud account is directly compromiseable</dd>
+
+<dt>Evidence</dt><dd><pre>aws credentials block: text/plain 39B, status 200</pre></dd>
+<dt>Exact fix</dt><dd class="fix">remove the file, rotate those credentials immediately, use an instance role instead of keys on disk</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="CRITICAL"
+ style="border-left-color:var(--cr)">
+<summary><span class="tag" style="background:var(--cr)">CRITICAL</span>
+<span class="ftitle">Environment file exposed</span>
+<span class="fmeta">A02 · exp-env ·
+verified</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/.env</dd>
+<dt>Why it matters</dt><dd>API keys, DB passwords and tokens are handed over in one request</dd>
+
+<dt>Evidence</dt><dd><pre>env assignments: text/plain 39B, status 200</pre></dd>
+<dt>Exact fix</dt><dd class="fix">move .env outside the web root, deny dotfiles, then rotate EVERY secret it ever contained</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="CRITICAL"
+ style="border-left-color:var(--cr)">
+<summary><span class="tag" style="background:var(--cr)">CRITICAL</span>
+<span class="ftitle">Private key file exposed on the server</span>
+<span class="fmeta">A04 · exp-keyfile ·
+verified</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/id_rsa</dd>
+<dt>Why it matters</dt><dd>attackers decrypt recorded traffic or impersonate your services</dd>
+
+<dt>Evidence</dt><dd><pre>private key: text/plain 86B, status 200</pre></dd>
+<dt>Exact fix</dt><dd class="fix">remove the key from the web root immediately and rotate it (reissue the certificate / API key), store keys outside docroot</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A04_2025-Cryptographic_Failures/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="CRITICAL"
+ style="border-left-color:var(--cr)">
+<summary><span class="tag" style="background:var(--cr)">CRITICAL</span>
+<span class="ftitle">JWT signed with a guessable secret</span>
+<span class="fmeta">A04 · jwt-weak-secret ·
+high</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/ · param jwt</dd>
+<dt>Why it matters</dt><dd>attackers forge tokens offline, no login needed</dd>
+<dt>Detail</dt><dd>verified offline, no requests to the target</dd>
+<dt>Evidence</dt><dd><pre>signature validates with candidate secret &#x27;secret&#x27; (offline check)</pre></dd>
+<dt>Exact fix</dt><dd class="fix">switch to RS256/ES256 or a 256-bit random secret, store it in a secret manager, rotate it</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A04_2025-Cryptographic_Failures/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="CRITICAL"
+ style="border-left-color:var(--cr)">
+<summary><span class="tag" style="background:var(--cr)">CRITICAL</span>
+<span class="ftitle">Secret or live API key shipped to the browser</span>
+<span class="fmeta">A02 · secret-leak ·
+verified</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/assets/app.js · param AWS access key ID</dd>
+<dt>Why it matters</dt><dd>any visitor can read the key and spend your money or your data</dd>
+<dt>Detail</dt><dd>client-visible secret: treat as compromised, rotate it and move it server-side</dd>
+<dt>Evidence</dt><dd><pre>AWS access key ID in served content: AKIAIO**********MPLE (value redacted)</pre></dd>
+<dt>Exact fix</dt><dd class="fix">pull the key out of the client bundle at once, rotate it, issue a scoped server-side replacement, restrict the old key</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="CRITICAL"
+ style="border-left-color:var(--cr)">
+<summary><span class="tag" style="background:var(--cr)">CRITICAL</span>
+<span class="ftitle">Secret or live API key shipped to the browser</span>
+<span class="fmeta">A02 · secret-leak ·
+verified</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/assets/app.js · param Stripe live secret</dd>
+<dt>Why it matters</dt><dd>any visitor can read the key and spend your money or your data</dd>
+<dt>Detail</dt><dd>client-visible secret: treat as compromised, rotate it and move it server-side</dd>
+<dt>Evidence</dt><dd><pre>Stripe live secret in served content: sk_liv**********************beef (value redacted)</pre></dd>
+<dt>Exact fix</dt><dd class="fix">pull the key out of the client bundle at once, rotate it, issue a scoped server-side replacement, restrict the old key</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="HIGH"
+ style="border-left-color:var(--hi)">
+<summary><span class="tag" style="background:var(--hi)">HIGH</span>
+<span class="ftitle">Admin surface reachable without login</span>
+<span class="fmeta">A01 · admin-force-browse ·
+verified</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/admin</dd>
+<dt>Why it matters</dt><dd>anyone can reach privileged pages and APIs</dd>
+
+<dt>Evidence</dt><dd><pre>HTTP 200, 298B, no login form (title: &#x27;Dashboard&#x27;)</pre></dd>
+<dt>Exact fix</dt><dd class="fix">deny by default: authenticate every route, then authorize by role, server-side</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A01_2025-Broken_Access_Control/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="HIGH"
+ style="border-left-color:var(--hi)">
+<summary><span class="tag" style="background:var(--hi)">HIGH</span>
+<span class="ftitle">Admin surface reachable without login</span>
+<span class="fmeta">A01 · admin-force-browse ·
+verified</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/account</dd>
+<dt>Why it matters</dt><dd>anyone can reach privileged pages and APIs</dd>
+
+<dt>Evidence</dt><dd><pre>HTTP 200, 425B, no login form (title: &#x27;Account&#x27;)</pre></dd>
+<dt>Exact fix</dt><dd class="fix">deny by default: authenticate every route, then authorize by role, server-side</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A01_2025-Broken_Access_Control/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="HIGH"
+ style="border-left-color:var(--hi)">
+<summary><span class="tag" style="background:var(--hi)">HIGH</span>
+<span class="ftitle">Session cookie issued over HTTP</span>
+<span class="fmeta">A04 · cookie-plaintext ·
+high</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/ · param sessionid</dd>
+<dt>Why it matters</dt><dd>session identifiers are readable and replayable on the wire</dd>
+
+<dt>Evidence</dt><dd><pre>session cookie sessionid issued over plain HTTP</pre></dd>
+<dt>Exact fix</dt><dd class="fix">serve the site over HTTPS only and set Secure on every session cookie</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A04_2025-Cryptographic_Failures/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="HIGH"
+ style="border-left-color:var(--hi)">
+<summary><span class="tag" style="background:var(--hi)">HIGH</span>
+<span class="ftitle">Session cookie issued over HTTP</span>
+<span class="fmeta">A04 · cookie-plaintext ·
+high</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/ · param auth</dd>
+<dt>Why it matters</dt><dd>session identifiers are readable and replayable on the wire</dd>
+
+<dt>Evidence</dt><dd><pre>session cookie auth issued over plain HTTP</pre></dd>
+<dt>Exact fix</dt><dd class="fix">serve the site over HTTPS only and set Secure on every session cookie</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A04_2025-Cryptographic_Failures/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="HIGH"
+ style="border-left-color:var(--hi)">
+<summary><span class="tag" style="background:var(--hi)">HIGH</span>
+<span class="ftitle">CORS reflects arbitrary Origin</span>
+<span class="fmeta">A01 · cors-reflect ·
+verified</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/</dd>
+<dt>Why it matters</dt><dd>any website can read this origin&#x27;s responses with the victim&#x27;s cookies</dd>
+<dt>Detail</dt><dd>two different attacker origins were both echoed back</dd>
+<dt>Evidence</dt><dd><pre>ACAO: https://qx-canary.invalid | ACAC: true</pre></dd>
+<dt>Exact fix</dt><dd class="fix">allowlist exact origins server-side, never echo the request Origin; keep Access-Control-Allow-Credentials off unless required</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A01_2025-Broken_Access_Control/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="HIGH"
+ style="border-left-color:var(--hi)">
+<summary><span class="tag" style="background:var(--hi)">HIGH</span>
+<span class="ftitle">Stack trace or debug page exposed</span>
+<span class="fmeta">A10 · err-stacktrace ·
+verified</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/qx-err-ed91cffc</dd>
+<dt>Why it matters</dt><dd>internal paths, framework versions and query shapes leak, aiding follow-up attacks</dd>
+
+<dt>Evidence</dt><dd><pre>Traceback (most recent call last):
+  File &quot;/app/server.py&quot;, line 42, in handler
+KeyError: &#x27;missing&#x27;
+</pre></dd>
+<dt>Exact fix</dt><dd class="fix">return generic errors with a correlation ID, keep traces in protected logs, disable debug mode in production</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A10_2025-Mishandling_of_Exceptional_Conditions/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="HIGH"
+ style="border-left-color:var(--hi)">
+<summary><span class="tag" style="background:var(--hi)">HIGH</span>
+<span class="ftitle">Admin interface reachable from the internet</span>
+<span class="fmeta">A02 · exp-admin-panel ·
+verified</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/phpmyadmin/</dd>
+<dt>Why it matters</dt><dd>database or server admin panels are brute-force and 0-day targets</dd>
+
+<dt>Evidence</dt><dd><pre>phpmyadmin: text/html; charset=utf-8 166B, status 200</pre></dd>
+<dt>Exact fix</dt><dd class="fix">bind admin panels to localhost or a VPN, add IP allowlisting plus MFA, remove them from public DNS</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="HIGH"
+ style="border-left-color:var(--hi)">
+<summary><span class="tag" style="background:var(--hi)">HIGH</span>
+<span class="ftitle">Backup or archive file exposed</span>
+<span class="fmeta">A02 · exp-backup ·
+verified</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/backup.zip</dd>
+<dt>Why it matters</dt><dd>source code, databases or keys leak through leftover deploy files</dd>
+
+<dt>Evidence</dt><dd><pre>zip magic: application/zip 15B, status 200</pre></dd>
+<dt>Exact fix</dt><dd class="fix">delete backups from the web root, store them outside docroot, deny *.bak *.old *.zip *.sql *.tar.gz</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="HIGH"
+ style="border-left-color:var(--hi)">
+<summary><span class="tag" style="background:var(--hi)">HIGH</span>
+<span class="ftitle">Git repository exposed on the server</span>
+<span class="fmeta">A02 · exp-git ·
+verified</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/.git/HEAD</dd>
+<dt>Why it matters</dt><dd>the full source tree and history ship to the attacker, secrets inside get harvested</dd>
+
+<dt>Evidence</dt><dd><pre>git HEAD ref: text/plain 21B, status 200</pre></dd>
+<dt>Exact fix</dt><dd class="fix">remove .git from deployment artifacts, deny dotfiles at the server: location ~ /\.git { deny all; }</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="HIGH"
+ style="border-left-color:var(--hi)">
+<summary><span class="tag" style="background:var(--hi)">HIGH</span>
+<span class="ftitle">Site served over plain HTTP</span>
+<span class="fmeta">A04 · no-tls ·
+verified</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/</dd>
+<dt>Why it matters</dt><dd>an attacker on the same network reads and edits every request</dd>
+
+<dt>Evidence</dt><dd><pre>target served over http://</pre></dd>
+<dt>Exact fix</dt><dd class="fix">redirect all HTTP to HTTPS and serve only TLS 1.2+, e.g. nginx: return 301 https://$host$request_uri;</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A04_2025-Cryptographic_Failures/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="HIGH"
+ style="border-left-color:var(--hi)">
+<summary><span class="tag" style="background:var(--hi)">HIGH</span>
+<span class="ftitle">SQL injection (database error revealed)</span>
+<span class="fmeta">A05 · sqli-error ·
+verified</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/search?q=hello · param q</dd>
+<dt>Why it matters</dt><dd>the query is attacker-influenced; data theft or modification may follow</dd>
+
+<dt>Evidence</dt><dd><pre>Error: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version near &#x27;&#x27; at line</pre></dd>
+<dt>Exact fix</dt><dd class="fix">use parameterized prepared statements for every value, allowlist identifiers, least-privilege DB account</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A05_2025-Injection/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="HIGH"
+ style="border-left-color:var(--hi)">
+<summary><span class="tag" style="background:var(--hi)">HIGH</span>
+<span class="ftitle">Path traversal</span>
+<span class="fmeta">A05 · traversal ·
+verified</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/download?file=readme.txt · param file</dd>
+<dt>Why it matters</dt><dd>arbitrary file read: configs, keys, source</dd>
+
+<dt>Evidence</dt><dd><pre>planted canary QXPLANT.txt returned</pre></dd>
+<dt>Exact fix</dt><dd class="fix">canonicalize and verify the resolved path stays under the allowed base dir, allowlist filenames</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A05_2025-Injection/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="HIGH"
+ style="border-left-color:var(--hi)">
+<summary><span class="tag" style="background:var(--hi)">HIGH</span>
+<span class="ftitle">Reflected cross-site scripting</span>
+<span class="fmeta">A05 · xss-reflected ·
+verified</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/download?file=readme.txt · param file</dd>
+<dt>Why it matters</dt><dd>attacker links hijack any victim&#x27;s session on your domain</dd>
+
+<dt>Evidence</dt><dd><pre>raw echo of &#x27;&lt;&quot;&gt;\&#x27;QX5a4fabf36ada0fee&#x27; in response body</pre></dd>
+<dt>Exact fix</dt><dd class="fix">context-aware output encoding (framework auto-escape), avoid innerHTML, add CSP as a second layer</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A05_2025-Injection/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="HIGH"
+ style="border-left-color:var(--hi)">
+<summary><span class="tag" style="background:var(--hi)">HIGH</span>
+<span class="ftitle">Reflected cross-site scripting</span>
+<span class="fmeta">A05 · xss-reflected ·
+verified</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/search?q=hello · param q</dd>
+<dt>Why it matters</dt><dd>attacker links hijack any victim&#x27;s session on your domain</dd>
+
+<dt>Evidence</dt><dd><pre>raw echo of &#x27;&lt;&quot;&gt;\&#x27;QX5a4fabf36a8bbcdd&#x27; in response body</pre></dd>
+<dt>Exact fix</dt><dd class="fix">context-aware output encoding (framework auto-escape), avoid innerHTML, add CSP as a second layer</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A05_2025-Injection/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="MEDIUM"
+ style="border-left-color:var(--me)">
+<summary><span class="tag" style="background:var(--me)">MEDIUM</span>
+<span class="ftitle">Page can be framed (clickjacking)</span>
+<span class="fmeta">A02 · clickjack ·
+high</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/</dd>
+<dt>Why it matters</dt><dd>an invisible overlay on a trusted page hijacks clicks and inputs</dd>
+
+<dt>Evidence</dt><dd><pre>no XFO and no frame-ancestors</pre></dd>
+<dt>Exact fix</dt><dd class="fix">add_header X-Frame-Options &quot;DENY&quot; always; and CSP frame-ancestors &#x27;none&#x27;</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="MEDIUM"
+ style="border-left-color:var(--me)">
+<summary><span class="tag" style="background:var(--me)">MEDIUM</span>
+<span class="ftitle">Session cookie without HttpOnly</span>
+<span class="fmeta">A07 · cookie-httponly ·
+high</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/ · param sessionid</dd>
+<dt>Why it matters</dt><dd>any XSS payload reads document.cookie and exfiltrates the session</dd>
+
+<dt>Evidence</dt><dd><pre>Set-Cookie: sessionid=... without HttpOnly</pre></dd>
+<dt>Exact fix</dt><dd class="fix">add HttpOnly to all session cookies</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A07_2025-Authentication_Failures/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="MEDIUM"
+ style="border-left-color:var(--me)">
+<summary><span class="tag" style="background:var(--me)">MEDIUM</span>
+<span class="ftitle">Session cookie without HttpOnly</span>
+<span class="fmeta">A07 · cookie-httponly ·
+high</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/ · param auth</dd>
+<dt>Why it matters</dt><dd>any XSS payload reads document.cookie and exfiltrates the session</dd>
+
+<dt>Evidence</dt><dd><pre>Set-Cookie: auth=***REDACTED*** without HttpOnly</pre></dd>
+<dt>Exact fix</dt><dd class="fix">add HttpOnly to all session cookies</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A07_2025-Authentication_Failures/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="MEDIUM"
+ style="border-left-color:var(--me)">
+<summary><span class="tag" style="background:var(--me)">MEDIUM</span>
+<span class="ftitle">State-changing form without CSRF token</span>
+<span class="fmeta">A01 · csrf-token-missing ·
+medium</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/transfer · param account,amount</dd>
+<dt>Why it matters</dt><dd>a third-party page can submit this form with the victim logged in</dd>
+<dt>Detail</dt><dd>confirm by replaying from a cross-origin page on a dry-run endpoint</dd>
+<dt>Evidence</dt><dd><pre>POST form with fields: account, amount and no hidden CSRF token</pre></dd>
+<dt>Exact fix</dt><dd class="fix">add a per-session CSRF token (constant-time compare) and SameSite cookies; never rely on secrecy of URLs</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A01_2025-Broken_Access_Control/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="MEDIUM"
+ style="border-left-color:var(--me)">
+<summary><span class="tag" style="background:var(--me)">MEDIUM</span>
+<span class="ftitle">State-changing form without CSRF token</span>
+<span class="fmeta">A01 · csrf-token-missing ·
+medium</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/login · param username,password</dd>
+<dt>Why it matters</dt><dd>a third-party page can submit this form with the victim logged in</dd>
+<dt>Detail</dt><dd>confirm by replaying from a cross-origin page on a dry-run endpoint</dd>
+<dt>Evidence</dt><dd><pre>POST form with fields: username, password and no hidden CSRF token</pre></dd>
+<dt>Exact fix</dt><dd class="fix">add a per-session CSRF token (constant-time compare) and SameSite cookies; never rely on secrecy of URLs</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A01_2025-Broken_Access_Control/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="MEDIUM"
+ style="border-left-color:var(--me)">
+<summary><span class="tag" style="background:var(--me)">MEDIUM</span>
+<span class="ftitle">Directory listing enabled</span>
+<span class="fmeta">A02 · dir-listing ·
+high</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/assets/</dd>
+<dt>Why it matters</dt><dd>attackers enumerate backups, uploads and forgotten files</dd>
+
+<dt>Evidence</dt><dd><pre>Index of /assets</pre></dd>
+<dt>Exact fix</dt><dd class="fix">autoindex off; (nginx) / Options -Indexes (Apache)</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="MEDIUM"
+ style="border-left-color:var(--me)">
+<summary><span class="tag" style="background:var(--me)">MEDIUM</span>
+<span class="ftitle">API documentation exposed publicly</span>
+<span class="fmeta">A02 · exp-api-docs ·
+high</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/openapi.json</dd>
+<dt>Why it matters</dt><dd>the full API surface, including forgotten endpoints, is handed to attackers</dd>
+
+<dt>Evidence</dt><dd><pre>openapi spec: application/json 50B, status 200</pre></dd>
+<dt>Exact fix</dt><dd class="fix">serve OpenAPI/Swagger only in staging or behind auth; block schema paths at the edge</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="MEDIUM"
+ style="border-left-color:var(--me)">
+<summary><span class="tag" style="background:var(--me)">MEDIUM</span>
+<span class="ftitle">Configuration file exposed</span>
+<span class="fmeta">A02 · exp-config ·
+high</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/config.json</dd>
+<dt>Why it matters</dt><dd>internal paths, credentials or feature flags become known</dd>
+
+<dt>Evidence</dt><dd><pre>config keys: application/json 29B, status 200</pre></dd>
+<dt>Exact fix</dt><dd class="fix">block config filenames at the server and stop shipping them in builds</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="MEDIUM"
+ style="border-left-color:var(--me)">
+<summary><span class="tag" style="background:var(--me)">MEDIUM</span>
+<span class="ftitle">Debug/monitoring endpoint exposed</span>
+<span class="fmeta">A02 · exp-debug-endpoint ·
+high</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/server-status</dd>
+<dt>Why it matters</dt><dd>runtime config, env values and internal state are disclosed</dd>
+
+<dt>Evidence</dt><dd><pre>apache status: text/html 90B, status 200</pre></dd>
+<dt>Exact fix</dt><dd class="fix">disable actuator/phpinfo/server-status style endpoints in production, bind them to localhost or auth</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="MEDIUM"
+ style="border-left-color:var(--me)">
+<summary><span class="tag" style="background:var(--me)">MEDIUM</span>
+<span class="ftitle">Source map published</span>
+<span class="fmeta">A08 · exp-sourcemap ·
+high</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/assets/app.js.map</dd>
+<dt>Why it matters</dt><dd>original source (including comments and internal APIs) is recoverable</dd>
+
+<dt>Evidence</dt><dd><pre>source map served (61B)</pre></dd>
+<dt>Exact fix</dt><dd class="fix">strip sourceMappingURL from shipped JS or serve .map files only for internal builds</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A08_2025-Software_or_Data_Integrity_Failures/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="MEDIUM"
+ style="border-left-color:var(--me)">
+<summary><span class="tag" style="background:var(--me)">MEDIUM</span>
+<span class="ftitle">GraphQL introspection enabled in production</span>
+<span class="fmeta">A02 · graphql-introspection ·
+high</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/graphql</dd>
+<dt>Why it matters</dt><dd>the full schema, including hidden mutations, is enumerable by anyone</dd>
+
+<dt>Evidence</dt><dd><pre>introspection answered, 50B: {&quot;data&quot;:{&quot;__schema&quot;:{&quot;types&quot;:[{&quot;name&quot;:&quot;Query&quot;}]}}}</pre></dd>
+<dt>Exact fix</dt><dd class="fix">disable introspection in production (Apollo: introspection: false; Hasura/GraphQL Yoga: disable for anon roles)</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="MEDIUM"
+ style="border-left-color:var(--me)">
+<summary><span class="tag" style="background:var(--me)">MEDIUM</span>
+<span class="ftitle">Sensitive page is cacheable</span>
+<span class="fmeta">A02 · hdr-cache-sensitive ·
+high</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/login</dd>
+<dt>Why it matters</dt><dd>shared caches and browsers persist authenticated pages</dd>
+
+<dt>Evidence</dt><dd><pre>no Cache-Control on a sensitive page</pre></dd>
+<dt>Exact fix</dt><dd class="fix">add_header Cache-Control &quot;no-store, private&quot; always; on login/account/API responses</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="MEDIUM"
+ style="border-left-color:var(--me)">
+<summary><span class="tag" style="background:var(--me)">MEDIUM</span>
+<span class="ftitle">Content-Security-Policy missing</span>
+<span class="fmeta">A02 · hdr-csp-missing ·
+high</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/</dd>
+<dt>Why it matters</dt><dd>injected scripts run freely, XSS impact jumps from leak to takeover</dd>
+
+<dt>Evidence</dt><dd><pre>header absent</pre></dd>
+<dt>Exact fix</dt><dd class="fix">start report-only: Content-Security-Policy-Report-Only: default-src &#x27;self&#x27;; object-src &#x27;none&#x27;; base-uri &#x27;none&#x27;; frame-ancestors &#x27;none&#x27;; form-action &#x27;self&#x27;; report-uri /csp-report, then enforce</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="MEDIUM"
+ style="border-left-color:var(--me)">
+<summary><span class="tag" style="background:var(--me)">MEDIUM</span>
+<span class="ftitle">X-Content-Type-Options missing</span>
+<span class="fmeta">A02 · hdr-nosniff ·
+high</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/</dd>
+<dt>Why it matters</dt><dd>browsers MIME-sniff responses into executable content</dd>
+
+<dt>Evidence</dt><dd><pre>header absent</pre></dd>
+<dt>Exact fix</dt><dd class="fix">add_header X-Content-Type-Options &quot;nosniff&quot; always;</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="MEDIUM"
+ style="border-left-color:var(--me)">
+<summary><span class="tag" style="background:var(--me)">MEDIUM</span>
+<span class="ftitle">Untrusted Host/X-Forwarded-Host reaches output</span>
+<span class="fmeta">A07 · host-header ·
+high</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/</dd>
+<dt>Why it matters</dt><dd>password-reset and absolute links can be poisoned to attacker infrastructure</dd>
+
+<dt>Evidence</dt><dd><pre>X-Forwarded-Host qx-host-canary.invalid reflected in body</pre></dd>
+<dt>Exact fix</dt><dd class="fix">build URLs from a configured canonical origin, never from request headers; reject unknown Host values at the proxy</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A07_2025-Authentication_Failures/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="MEDIUM"
+ style="border-left-color:var(--me)">
+<summary><span class="tag" style="background:var(--me)">MEDIUM</span>
+<span class="ftitle">JWT has no expiration claim</span>
+<span class="fmeta">A07 · jwt-no-exp ·
+high</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/ · param jwt</dd>
+<dt>Why it matters</dt><dd>tokens live forever, logout and password change do not revoke them</dd>
+
+<dt>Evidence</dt><dd><pre>claims present: sub</pre></dd>
+<dt>Exact fix</dt><dd class="fix">set short exp (minutes to hours), validate exp/nbf/iss/aud, back long sessions with refresh tokens</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A07_2025-Authentication_Failures/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="MEDIUM"
+ style="border-left-color:var(--me)">
+<summary><span class="tag" style="background:var(--me)">MEDIUM</span>
+<span class="ftitle">Write methods accepted (PUT/DELETE)</span>
+<span class="fmeta">A02 · method-put ·
+high</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/</dd>
+<dt>Why it matters</dt><dd>unauthenticated file upload or deletion may be possible</dd>
+
+<dt>Evidence</dt><dd><pre>Allow: GET, HEAD, POST, PUT, DELETE, PATCH, OPTIONS</pre></dd>
+<dt>Exact fix</dt><dd class="fix">reject non-GET/POST at the edge, require auth and CSRF on any allowed write method</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="MEDIUM"
+ style="border-left-color:var(--me)">
+<summary><span class="tag" style="background:var(--me)">MEDIUM</span>
+<span class="ftitle">HTTP TRACE enabled</span>
+<span class="fmeta">A02 · method-trace ·
+high</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/</dd>
+<dt>Why it matters</dt><dd>cross-site tracing can echo custom headers back to scripts</dd>
+
+<dt>Evidence</dt><dd><pre>TRACE / HTTP/1.1
+User-Agent: QuantIQRedTeamBot/1.0 (authorized self-testing)
+Cookie: 
+</pre></dd>
+<dt>Exact fix</dt><dd class="fix">disable TRACE at the server/proxy: nginx does not enable it by default, apache: TraceEnable off</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="MEDIUM"
+ style="border-left-color:var(--me)">
+<summary><span class="tag" style="background:var(--me)">MEDIUM</span>
+<span class="ftitle">Open redirect</span>
+<span class="fmeta">A06 · redirect-open ·
+high</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/redirect?to=/home · param to</dd>
+<dt>Why it matters</dt><dd>phishing links borrow your trusted domain</dd>
+
+<dt>Evidence</dt><dd><pre>Location: //qx-canary.invalid/landing</pre></dd>
+<dt>Exact fix</dt><dd class="fix">allowlist redirect targets (path-only or known hosts), reject scheme-relative and absolute URLs</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A06_2025-Insecure_Design/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="MEDIUM"
+ style="border-left-color:var(--me)">
+<summary><span class="tag" style="background:var(--me)">MEDIUM</span>
+<span class="ftitle">Possible SQL injection (boolean differential)</span>
+<span class="fmeta">A05 · sqli-boolean ·
+medium</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/item?id=1 · param id</dd>
+<dt>Why it matters</dt><dd>attacker can walk the database one boolean at a time</dd>
+<dt>Detail</dt><dd>boolean differential is a strong signal; confirm manually before calling it SQLi</dd>
+<dt>Evidence</dt><dd><pre>AND 1=1 matches baseline (1.00) while AND 1=2 diverges (0.69)</pre></dd>
+<dt>Exact fix</dt><dd class="fix">same fix as error-based SQLi: parameterized queries everywhere</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A05_2025-Injection/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="LOW"
+ style="border-left-color:var(--lo)">
+<summary><span class="tag" style="background:var(--lo)">LOW</span>
+<span class="ftitle">Session cookie without SameSite</span>
+<span class="fmeta">A07 · cookie-samesite ·
+high</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/ · param sessionid</dd>
+<dt>Why it matters</dt><dd>cross-site requests carry the session, widening CSRF</dd>
+
+<dt>Evidence</dt><dd><pre>Set-Cookie: sessionid=... without SameSite</pre></dd>
+<dt>Exact fix</dt><dd class="fix">add SameSite=Lax (or Strict for state-changing flows)</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A07_2025-Authentication_Failures/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="LOW"
+ style="border-left-color:var(--lo)">
+<summary><span class="tag" style="background:var(--lo)">LOW</span>
+<span class="ftitle">Session cookie without SameSite</span>
+<span class="fmeta">A07 · cookie-samesite ·
+high</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/ · param auth</dd>
+<dt>Why it matters</dt><dd>cross-site requests carry the session, widening CSRF</dd>
+
+<dt>Evidence</dt><dd><pre>Set-Cookie: auth=***REDACTED*** without SameSite</pre></dd>
+<dt>Exact fix</dt><dd class="fix">add SameSite=Lax (or Strict for state-changing flows)</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A07_2025-Authentication_Failures/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="LOW"
+ style="border-left-color:var(--lo)">
+<summary><span class="tag" style="background:var(--lo)">LOW</span>
+<span class="ftitle">Dependency manifest exposed</span>
+<span class="fmeta">A03 · exp-deps ·
+high</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/package.json</dd>
+<dt>Why it matters</dt><dd>exact component versions are known, CVE matching becomes one-shot</dd>
+
+<dt>Evidence</dt><dd><pre>manifest: application/json 54B, status 200</pre></dd>
+<dt>Exact fix</dt><dd class="fix">deny package manifests at the edge; run npm audit / osv-scanner to check those versions yourself first</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A03_2025-Software_Supply_Chain_Failures/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="LOW"
+ style="border-left-color:var(--lo)">
+<summary><span class="tag" style="background:var(--lo)">LOW</span>
+<span class="ftitle">Server version disclosed in banner</span>
+<span class="fmeta">A03 · hdr-banner ·
+high</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/</dd>
+<dt>Why it matters</dt><dd>version-matched exploits (CVE lookups) become one-shot</dd>
+
+<dt>Evidence</dt><dd><pre>Server: nginx/1.18.0 </pre></dd>
+<dt>Exact fix</dt><dd class="fix">nginx: server_tokens off;, or proxy_hide_header Server; then set a generic Server value at the edge</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A03_2025-Software_Supply_Chain_Failures/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="LOW"
+ style="border-left-color:var(--lo)">
+<summary><span class="tag" style="background:var(--lo)">LOW</span>
+<span class="ftitle">Permissions-Policy missing</span>
+<span class="fmeta">A02 · hdr-permissions ·
+high</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/</dd>
+<dt>Why it matters</dt><dd>scripts can reach camera, microphone, geolocation without consent gating</dd>
+
+<dt>Evidence</dt><dd><pre>header absent</pre></dd>
+<dt>Exact fix</dt><dd class="fix">add_header Permissions-Policy &quot;geolocation=(), camera=(), microphone=()&quot; always;</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="LOW"
+ style="border-left-color:var(--lo)">
+<summary><span class="tag" style="background:var(--lo)">LOW</span>
+<span class="ftitle">Referrer-Policy missing</span>
+<span class="fmeta">A02 · hdr-referrer ·
+high</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/</dd>
+<dt>Why it matters</dt><dd>full URLs (with tokens in query strings) leak to third parties</dd>
+
+<dt>Evidence</dt><dd><pre>header absent</pre></dd>
+<dt>Exact fix</dt><dd class="fix">add_header Referrer-Policy &quot;strict-origin-when-cross-origin&quot; always;</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="LOW"
+ style="border-left-color:var(--lo)">
+<summary><span class="tag" style="background:var(--lo)">LOW</span>
+<span class="ftitle">Framework fingerprint header present</span>
+<span class="fmeta">A02 · hdr-x-powered ·
+high</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/</dd>
+<dt>Why it matters</dt><dd>attackers match your exact framework/version to known exploits</dd>
+
+<dt>Evidence</dt><dd><pre>X-Powered-By: Express/4.18.2</pre></dd>
+<dt>Exact fix</dt><dd class="fix">suppress it: nginx proxy_hide_header X-Powered-By;, or framework config expose_php=Off / X-Powered-By off</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="LOW"
+ style="border-left-color:var(--lo)">
+<summary><span class="tag" style="background:var(--lo)">LOW</span>
+<span class="ftitle">No rate limit observed on login</span>
+<span class="fmeta">A07 · ratelimit-login ·
+high</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/login</dd>
+<dt>Why it matters</dt><dd>credential stuffing and password spraying run at scale</dd>
+<dt>Detail</dt><dd>no 429/lockout observed in a gentle N=10 burst; manual review recommended before concluding</dd>
+<dt>Evidence</dt><dd><pre>10 rapid failed logins, statuses: [200, 200, 200, 200, 200, 200, 200, 200, 200, 200]</pre></dd>
+<dt>Exact fix</dt><dd class="fix">layer limits (edge + app): e.g. 4/min then 10/10min then 20/hour per IP+account, count failures, add CAPTCHA</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A07_2025-Authentication_Failures/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="LOW"
+ style="border-left-color:var(--lo)">
+<summary><span class="tag" style="background:var(--lo)">LOW</span>
+<span class="ftitle">robots.txt reveals sensitive paths</span>
+<span class="fmeta">A02 · robots-disclosure ·
+high</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/robots.txt</dd>
+<dt>Why it matters</dt><dd>disallowed admin/backup paths are published to everyone</dd>
+
+<dt>Evidence</dt><dd><pre>Disallow: /admin</pre></dd>
+<dt>Exact fix</dt><dd class="fix">remove secret paths from robots.txt, block them at the server instead</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="LOW"
+ style="border-left-color:var(--lo)">
+<summary><span class="tag" style="background:var(--lo)">LOW</span>
+<span class="ftitle">Third-party script without Subresource Integrity</span>
+<span class="fmeta">A08 · sri-missing ·
+high</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/ · param https://cdn.example.org/lib.js</dd>
+<dt>Why it matters</dt><dd>a compromised CDN silently runs attacker code in your pages</dd>
+
+<dt>Evidence</dt><dd><pre>&lt;script src=&quot;https://cdn.example.org/lib.js&quot;&gt; without integrity</pre></dd>
+<dt>Exact fix</dt><dd class="fix">add integrity=&quot;sha384-...&quot; and crossorigin to every cross-origin script/link, or self-host the asset</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A08_2025-Software_or_Data_Integrity_Failures/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="INFO"
+ style="border-left-color:var(--in)">
+<summary><span class="tag" style="background:var(--in)">INFO</span>
+<span class="ftitle">Cross-Origin-Opener-Policy missing</span>
+<span class="fmeta">A02 · hdr-coop ·
+high</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/</dd>
+<dt>Why it matters</dt><dd>cross-origin documents can share a browsing context (Spectre-class risk)</dd>
+
+<dt>Evidence</dt><dd><pre>header absent</pre></dd>
+<dt>Exact fix</dt><dd class="fix">add_header Cross-Origin-Opener-Policy &quot;same-origin&quot; always;</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="INFO"
+ style="border-left-color:var(--in)">
+<summary><span class="tag" style="background:var(--in)">INFO</span>
+<span class="ftitle">Cross-Origin-Resource-Policy missing</span>
+<span class="fmeta">A02 · hdr-corp ·
+high</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/</dd>
+<dt>Why it matters</dt><dd>responses can be read cross-origin in no-cors contexts</dd>
+
+<dt>Evidence</dt><dd><pre>header absent</pre></dd>
+<dt>Exact fix</dt><dd class="fix">add_header Cross-Origin-Resource-Policy &quot;same-site&quot; always; (test PDFs first)</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="INFO"
+ style="border-left-color:var(--in)">
+<summary><span class="tag" style="background:var(--in)">INFO</span>
+<span class="ftitle">security.txt missing</span>
+<span class="fmeta">RFC 9116 · sec-txt-missing ·
+high</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/.well-known/security.txt</dd>
+<dt>Why it matters</dt><dd>researchers have no documented channel to report issues to you</dd>
+
+<dt>Evidence</dt><dd><pre>no RFC 9116 security.txt found</pre></dd>
+<dt>Exact fix</dt><dd class="fix">publish /.well-known/security.txt with Contact: mailto:you@domain and Policy: link</dd>
+<dt>Reference</dt><dd><a href="https://cheatsheetseries.owasp.org/cheatsheets/Reporting_Cheat_Sheet.html">cheatsheetseries.owasp.org</a></dd>
+</dl></div></details>
+</div></div>
+<h2>OWASP Top 10:2025 mapping</h2>
+<table><tr><th>ID</th><th>Category</th></tr><tr><td>A01:2025</td><td>Broken Access Control</td></tr><tr><td>A02:2025</td><td>Security Misconfiguration</td></tr><tr><td>A03:2025</td><td>Software Supply Chain Failures</td></tr><tr><td>A04:2025</td><td>Cryptographic Failures</td></tr><tr><td>A05:2025</td><td>Injection</td></tr><tr><td>A06:2025</td><td>Insecure Design</td></tr><tr><td>A07:2025</td><td>Authentication Failures</td></tr><tr><td>A08:2025</td><td>Software or Data Integrity Failures</td></tr><tr><td>A09:2025</td><td>Security Logging and Alerting Failures</td></tr><tr><td>A10:2025</td><td>Mishandling of Exceptional Conditions</td></tr></table>
+<div class="two">
+<div><h2>Check coverage</h2>
+<table><tr><th>Check</th><th>What it probes</th><th>Result</th></tr><tr><td>admin-force-browse</td><td>Admin surface reachable without login</td><td class='ok'>FIRED</td></tr><tr><td>clickjack</td><td>Page can be framed (clickjacking)</td><td class='ok'>FIRED</td></tr><tr><td>cmdi-echo</td><td>OS command injection</td><td class='ok'>FIRED</td></tr><tr><td>cookie-httponly</td><td>Session cookie without HttpOnly</td><td class='ok'>FIRED</td></tr><tr><td>cookie-long-life</td><td>Session cookie lives for a very long time</td><td class=''>clean / not applicable</td></tr><tr><td>cookie-plaintext</td><td>Session cookie issued over HTTP</td><td class='ok'>FIRED</td></tr><tr><td>cookie-samesite</td><td>Session cookie without SameSite</td><td class='ok'>FIRED</td></tr><tr><td>cookie-samesite-none</td><td>SameSite=None cookie without Secure</td><td class=''>clean / not applicable</td></tr><tr><td>cookie-secure</td><td>Session cookie without Secure flag</td><td class=''>clean / not applicable</td></tr><tr><td>cors-null</td><td>CORS trusts the null origin</td><td class=''>clean / not applicable</td></tr><tr><td>cors-reflect</td><td>CORS reflects arbitrary Origin</td><td class='ok'>FIRED</td></tr><tr><td>cors-star</td><td>Wildcard CORS on an authenticated endpoint</td><td class=''>clean / not applicable</td></tr><tr><td>csrf-token-missing</td><td>State-changing form without CSRF token</td><td class='ok'>FIRED</td></tr><tr><td>dir-listing</td><td>Directory listing enabled</td><td class='ok'>FIRED</td></tr><tr><td>err-stacktrace</td><td>Stack trace or debug page exposed</td><td class='ok'>FIRED</td></tr><tr><td>exp-admin-panel</td><td>Admin interface reachable from the internet</td><td class='ok'>FIRED</td></tr><tr><td>exp-api-docs</td><td>API documentation exposed publicly</td><td class='ok'>FIRED</td></tr><tr><td>exp-aws</td><td>Cloud credentials file exposed</td><td class='ok'>FIRED</td></tr><tr><td>exp-backup</td><td>Backup or archive file exposed</td><td class='ok'>FIRED</td></tr><tr><td>exp-config</td><td>Configuration file exposed</td><td class='ok'>FIRED</td></tr><tr><td>exp-debug-endpoint</td><td>Debug/monitoring endpoint exposed</td><td class='ok'>FIRED</td></tr><tr><td>exp-deps</td><td>Dependency manifest exposed</td><td class='ok'>FIRED</td></tr><tr><td>exp-env</td><td>Environment file exposed</td><td class='ok'>FIRED</td></tr><tr><td>exp-git</td><td>Git repository exposed on the server</td><td class='ok'>FIRED</td></tr><tr><td>exp-keyfile</td><td>Private key file exposed on the server</td><td class='ok'>FIRED</td></tr><tr><td>exp-sourcemap</td><td>Source map published</td><td class='ok'>FIRED</td></tr><tr><td>graphql-introspection</td><td>GraphQL introspection enabled in production</td><td class='ok'>FIRED</td></tr><tr><td>hdr-banner</td><td>Server version disclosed in banner</td><td class='ok'>FIRED</td></tr><tr><td>hdr-cache-sensitive</td><td>Sensitive page is cacheable</td><td class='ok'>FIRED</td></tr><tr><td>hdr-coop</td><td>Cross-Origin-Opener-Policy missing</td><td class='ok'>FIRED</td></tr><tr><td>hdr-corp</td><td>Cross-Origin-Resource-Policy missing</td><td class='ok'>FIRED</td></tr><tr><td>hdr-csp-missing</td><td>Content-Security-Policy missing</td><td class='ok'>FIRED</td></tr><tr><td>hdr-csp-unsafe</td><td>CSP allows unsafe-inline or unsafe-eval</td><td class=''>clean / not applicable</td></tr><tr><td>hdr-hsts</td><td>Strict-Transport-Security missing</td><td class=''>clean / not applicable</td></tr><tr><td>hdr-nosniff</td><td>X-Content-Type-Options missing</td><td class='ok'>FIRED</td></tr><tr><td>hdr-obsolete</td><td>Obsolete pinning/CT header present</td><td class=''>clean / not applicable</td></tr><tr><td>hdr-permissions</td><td>Permissions-Policy missing</td><td class='ok'>FIRED</td></tr><tr><td>hdr-referrer</td><td>Referrer-Policy missing</td><td class='ok'>FIRED</td></tr><tr><td>hdr-x-powered</td><td>Framework fingerprint header present</td><td class='ok'>FIRED</td></tr><tr><td>hdr-xss-legacy</td><td>X-XSS-Protection set to an unsafe value</td><td class=''>clean / not applicable</td></tr><tr><td>host-header</td><td>Untrusted Host/X-Forwarded-Host reaches output</td><td class='ok'>FIRED</td></tr><tr><td>jwt-alg-none</td><td>JWT issued with alg=none</td><td class=''>clean / not applicable</td></tr><tr><td>jwt-long-life</td><td>JWT expiration is very long</td><td class=''>clean / not applicable</td></tr><tr><td>jwt-no-exp</td><td>JWT has no expiration claim</td><td class='ok'>FIRED</td></tr><tr><td>jwt-weak-secret</td><td>JWT signed with a guessable secret</td><td class='ok'>FIRED</td></tr><tr><td>method-put</td><td>Write methods accepted (PUT/DELETE)</td><td class='ok'>FIRED</td></tr><tr><td>method-trace</td><td>HTTP TRACE enabled</td><td class='ok'>FIRED</td></tr><tr><td>mixed-content</td><td>Mixed content on an HTTPS page</td><td class=''>clean / not applicable</td></tr><tr><td>no-tls</td><td>Site served over plain HTTP</td><td class='ok'>FIRED</td></tr><tr><td>ratelimit-login</td><td>No rate limit observed on login</td><td class='ok'>FIRED</td></tr><tr><td>redirect-open</td><td>Open redirect</td><td class='ok'>FIRED</td></tr><tr><td>robots-disclosure</td><td>robots.txt reveals sensitive paths</td><td class='ok'>FIRED</td></tr><tr><td>sec-txt-missing</td><td>security.txt missing</td><td class='ok'>FIRED</td></tr><tr><td>secret-leak</td><td>Secret or live API key shipped to the browser</td><td class='ok'>FIRED</td></tr><tr><td>sqli-boolean</td><td>Possible SQL injection (boolean differential)</td><td class='ok'>FIRED</td></tr><tr><td>sqli-error</td><td>SQL injection (database error revealed)</td><td class='ok'>FIRED</td></tr><tr><td>sri-missing</td><td>Third-party script without Subresource Integrity</td><td class='ok'>FIRED</td></tr><tr><td>subdomain-dangling</td><td>Certificate-log subdomain no longer resolves</td><td class=''>clean / not applicable</td></tr><tr><td>tls-expiry</td><td>TLS certificate expiring soon</td><td class=''>clean / not applicable</td></tr><tr><td>tls-legacy</td><td>Legacy TLS protocol accepted</td><td class=''>clean / not applicable</td></tr><tr><td>tls-unverified</td><td>TLS certificate not trusted or mismatched</td><td class=''>clean / not applicable</td></tr><tr><td>traversal</td><td>Path traversal</td><td class='ok'>FIRED</td></tr><tr><td>xss-reflected</td><td>Reflected cross-site scripting</td><td class='ok'>FIRED</td></tr></table></div>
+<div><h2>Recon</h2><table><tr><th>Item</th><th>Value</th></tr><tr><td>target</td><td>http://127.0.0.1:8931/</td></tr><tr><td>status</td><td>200</td></tr><tr><td>server</td><td>nginx/1.18.0 </td></tr><tr><td>ip</td><td>127.0.0.1</td></tr><tr><td>requests budget</td><td>1/400</td></tr><tr><td>robots.txt</td><td>4 lines</td></tr><tr><td>sitemap.xml</td><td>parsed</td></tr><tr><td>page</td><td>http://127.0.0.1:8931/ :: Quant IQ QA</td></tr><tr><td>page</td><td>http://127.0.0.1:8931/assets/ :: Index of /assets</td></tr><tr><td>page</td><td>http://127.0.0.1:8931/item?id=1 :: Item</td></tr><tr><td>page</td><td>http://127.0.0.1:8931/login :: Login</td></tr><tr><td>page</td><td>http://127.0.0.1:8931/search?q=hello :: Search</td></tr><tr><td>js assets scanned</td><td>1</td></tr><tr><td>endpoints mined from js</td><td>2</td></tr><tr><td>wayback</td><td>off (add --wayback)</td></tr><tr><td>ct-log</td><td>off (add --ct-log)</td></tr><tr><td>server version</td><td>nginx/1.18.0 </td></tr></table>
+<h2>Engine notes</h2><ul class="muted"><li>mode: active (scenario full)</li><li>request error http://127.0.0.1:8931/redirect?to=%2Fhome+AND+1%3D1: InvalidURL: URL can&#x27;t contain control characters. &#x27;/home AND 1=1&#x27; (found at least &#x27; &#x27;)</li><li>request error http://127.0.0.1:8931/redirect?to=%2Fhome+AND+1%3D2: InvalidURL: URL can&#x27;t contain control characters. &#x27;/home AND 1=2&#x27; (found at least &#x27; &#x27;)</li><li>request error http://127.0.0.1:8931/redirect?to=%2Fhome%3B+echo+QX5907d2b2cc: InvalidURL: URL can&#x27;t contain control characters. &#x27;/home; echo QX5907d2b2cc&#x27; (found at least &#x27; &#x27;)</li><li>request error http://127.0.0.1:8931/redirect?to=%2Fhome+%7C+echo+QX2f13a9994b: InvalidURL: URL can&#x27;t contain control characters. &#x27;/home | echo QX2f13a9994b&#x27; (found at least &#x27; &#x27;)</li><li>request error http://127.0.0.1:8931/redirect?to=%2Fhome+%26%26+echo+QX801549f265: InvalidURL: URL can&#x27;t contain control characters. &#x27;/home &amp;&amp; echo QX801549f265&#x27; (found at least &#x27; &#x27;)</li><li>http://127.0.0.1:8931/transfer: no CSRF token and no SameSite cookie attribute</li><li>http://127.0.0.1:8931/login: no CSRF token and no SameSite cookie attribute</li></ul></div>
+</div>
+<h2>Method and safety rails</h2>
+<p class="muted">Scope gate: every request host must match the allowlist, or it is
+never sent. Rate limit 60.0 req/s with jitter, hard budget
+400 requests, identifiable User-Agent, benign payloads only
+(canaries, error signatures, echo markers), no brute force, no DoS, no data
+modification, robots.txt honored during discovery. Critical/high findings are
+re-tested once; failures are downgraded to candidate.
+Standards: OWASP Top 10:2025, OWASP WSTG, OWASP Cheat Sheet Series,
+NIST SP 800-115, PTES.</p>
+<p class="muted">redteam.py v1.1.0 · generated for the owner of
+127.0.0.1 · re-run after each fix to confirm the score moves.</p>
+</div></body></html>

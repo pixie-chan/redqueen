@@ -1,0 +1,11 @@
+flowchart LR
+    S["seed<br/>target URL"] --> P1["pass 1: BFS crawl<br/>robots.txt, sitemap + gzip,<br/>forms, query params,<br/>same-origin JS urls"]
+    P1 --> P2["pass 2: JS mining<br/>fetch bundles, extract<br/>/api routes + params"]
+    P2 --> P3["pass 3:<br/>probe mined routes"]
+    P1 --> WB{"--wayback?"}
+    WB -- "on" --> W1["Wayback CDX<br/>scope filter"] --> P4["re-crawl<br/>historical urls"]
+    P1 --> CT{"--ct-log?"}
+    CT -- "on" --> C1["crt.sh to Cert Spotter<br/>DNS resolve"]
+    C1 --> CF["dangling subdomain<br/>findings (report only)"]
+    P3 --> ST["stores<br/>pages, params,<br/>forms, endpoints"]
+    P4 --> ST

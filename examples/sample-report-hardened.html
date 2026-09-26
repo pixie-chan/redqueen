@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Red team report · 127.0.0.1</title>
+<style>
+:root{--bg:#0b0e13;--panel:#12161d;--ink:#d7dde6;--mut:#8b94a3;--line:#232a35;
+--cr:#ff2d55;--hi:#ff6b35;--me:#ffb020;--lo:#4aa3ff;--in:#7d8590;--acc:#39d98a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+font:15px/1.6 "DejaVu Sans Mono",Consolas,monospace}
+.wrap{max-width:1040px;margin:0 auto;padding:34px 26px 80px}
+header.top{border-bottom:1px solid var(--line);padding-bottom:22px;margin-bottom:26px}
+.kicker{color:var(--acc);font-size:12px;letter-spacing:.22em;text-transform:uppercase}
+h1{font-size:26px;margin:8px 0 6px;font-weight:700}
+.meta{color:var(--mut);font-size:12.5px}
+.meta b{color:var(--ink)}
+.grid{display:grid;grid-template-columns:270px 1fr;gap:26px;align-items:start}
+@media(max-width:760px){.grid{grid-template-columns:1fr}}
+.scoreoxed{background:var(--panel);border:1px solid var(--line);padding:22px}
+.score{font-size:64px;font-weight:700;line-height:1}
+.score small{font-size:18px;color:var(--mut)}
+.bar{height:10px;background:#1b212b;margin:16px 0 14px;position:relative}
+.bar i{position:absolute;inset:0 auto 0 0;display:block}
+.sevrow{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+.chip{font-size:11.5px;padding:3px 9px;border:1px solid var(--line);color:var(--ink)}
+h2{font-size:13px;letter-spacing:.18em;text-transform:uppercase;color:var(--mut);
+margin:34px 0 12px;border-bottom:1px solid var(--line);padding-bottom:7px}
+.narr{background:var(--panel);border-left:3px solid var(--acc);padding:14px 18px;
+margin-bottom:10px}
+.narr b{color:var(--acc)}
+.narr div{color:var(--mut);font-size:13px;margin-top:4px}
+details.f{background:var(--panel);border:1px solid var(--line);border-left-width:4px;
+margin-bottom:9px}
+details.f summary{cursor:pointer;padding:11px 15px;display:flex;gap:12px;
+align-items:baseline;list-style:none}
+details.f summary::-webkit-details-marker{display:none}
+.tag{font-size:10.5px;padding:2px 7px;color:#0b0e13;font-weight:700;white-space:nowrap}
+.ftitle{font-weight:700}
+.fmeta{color:var(--mut);font-size:12px;margin-left:auto;white-space:nowrap}
+.fbody{padding:0 15px 15px;border-top:1px solid var(--line);margin-top:2px;
+padding-top:12px}
+.fbody dt{color:var(--mut);font-size:11px;letter-spacing:.14em;
+text-transform:uppercase;margin-top:10px}
+.fbody dd{margin:3px 0 0}
+pre{background:#0e1218;border:1px solid var(--line);padding:10px 12px;overflow:auto;
+font-size:12.5px;white-space:pre-wrap;word-break:break-all}
+.fix{color:var(--acc)}
+a{color:var(--lo)}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+th{color:var(--mut);font-weight:600;font-size:11.5px;letter-spacing:.1em;
+text-transform:uppercase}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+@media(max-width:760px){.two{grid-template-columns:1fr}}
+.muted{color:var(--mut);font-size:13px}
+.ok{color:var(--acc)}.bad{color:var(--cr)}
+.filt{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px}
+.filt button{background:var(--panel);color:var(--ink);border:1px solid var(--line);
+padding:5px 13px;font:12px/1 "DejaVu Sans Mono",monospace;cursor:pointer;
+letter-spacing:.08em}
+.filt button.on{border-color:var(--acc);color:var(--acc)}
+</style></head><body><div class="wrap">
+<header class="top">
+<div class="kicker">authorized self-assessment · redteam.py v1.1.0</div>
+<h1>Attack simulation report</h1>
+<div class="meta">target <b>http://127.0.0.1:8931/</b> ·
+scope <b>127.0.0.1</b> ·
+scenario <b>full</b> ·
+finished <b>2026-09-25T18:07:02+00:00</b> UTC ·
+requests <b>131/400</b></div>
+</header>
+<div class="grid">
+<div class="scorebox">
+<div class="kicker">security score</div>
+<div class="score" style="color:var(--me)">76.0<small>/100</small></div>
+<div class="bar"><i style="width:76.0%;background:var(--me)"></i></div>
+<div class="sevrow"><span class="chip" style="border-color:var(--cr);color:var(--cr)">0 CRITICAL</span><span class="chip" style="border-color:var(--hi);color:var(--hi)">3 HIGH</span><span class="chip" style="border-color:var(--me);color:var(--me)">0 MEDIUM</span><span class="chip" style="border-color:var(--lo);color:var(--lo)">0 LOW</span><span class="chip" style="border-color:var(--in);color:var(--in)">0 INFO</span></div>
+<p class="muted">weighted: critical −25, high −12, medium −5, low −2;
+unverified critical/high count half.</p>
+</div>
+<div>
+<h2>Attacker narrative</h2>
+<div class="narr"><b>1. Session cookie issued over HTTP</b> (HIGH, A04)<div>session identifiers are readable and replayable on the wire</div></div><div class="narr"><b>2. Session cookie issued over HTTP</b> (HIGH, A04)<div>session identifiers are readable and replayable on the wire</div></div><div class="narr"><b>3. Site served over plain HTTP</b> (HIGH, A04)<div>an attacker on the same network reads and edits every request</div></div>
+<h2>Findings (3)</h2>
+<div class="filt"><button class='on' onclick="ff('ALL',this)">ALL</button><button class='' onclick="ff('CRITICAL',this)">CRITICAL</button><button class='' onclick="ff('HIGH',this)">HIGH</button><button class='' onclick="ff('MEDIUM',this)">MEDIUM</button><button class='' onclick="ff('LOW',this)">LOW</button><button class='' onclick="ff('INFO',this)">INFO</button>
+</div>
+<details class="f" data-sev="HIGH"
+ style="border-left-color:var(--hi)">
+<summary><span class="tag" style="background:var(--hi)">HIGH</span>
+<span class="ftitle">Session cookie issued over HTTP</span>
+<span class="fmeta">A04 · cookie-plaintext ·
+high</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/ · param sessionid</dd>
+<dt>Why it matters</dt><dd>session identifiers are readable and replayable on the wire</dd>
+
+<dt>Evidence</dt><dd><pre>session cookie sessionid issued over plain HTTP</pre></dd>
+<dt>Exact fix</dt><dd class="fix">serve the site over HTTPS only and set Secure on every session cookie</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A04_2025-Cryptographic_Failures/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="HIGH"
+ style="border-left-color:var(--hi)">
+<summary><span class="tag" style="background:var(--hi)">HIGH</span>
+<span class="ftitle">Session cookie issued over HTTP</span>
+<span class="fmeta">A04 · cookie-plaintext ·
+high</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/ · param auth</dd>
+<dt>Why it matters</dt><dd>session identifiers are readable and replayable on the wire</dd>
+
+<dt>Evidence</dt><dd><pre>session cookie auth issued over plain HTTP</pre></dd>
+<dt>Exact fix</dt><dd class="fix">serve the site over HTTPS only and set Secure on every session cookie</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A04_2025-Cryptographic_Failures/">top10.owasp.org</a></dd>
+</dl></div></details><details class="f" data-sev="HIGH"
+ style="border-left-color:var(--hi)">
+<summary><span class="tag" style="background:var(--hi)">HIGH</span>
+<span class="ftitle">Site served over plain HTTP</span>
+<span class="fmeta">A04 · no-tls ·
+verified</span></summary>
+<div class="fbody"><dl>
+<dt>Where</dt><dd>http://127.0.0.1:8931/</dd>
+<dt>Why it matters</dt><dd>an attacker on the same network reads and edits every request</dd>
+
+<dt>Evidence</dt><dd><pre>target served over http://</pre></dd>
+<dt>Exact fix</dt><dd class="fix">redirect all HTTP to HTTPS and serve only TLS 1.2+, e.g. nginx: return 301 https://$host$request_uri;</dd>
+<dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A04_2025-Cryptographic_Failures/">top10.owasp.org</a></dd>
+</dl></div></details>
+</div></div>
+<h2>OWASP Top 10:2025 mapping</h2>
+<table><tr><th>ID</th><th>Category</th></tr><tr><td>A01:2025</td><td>Broken Access Control</td></tr><tr><td>A02:2025</td><td>Security Misconfiguration</td></tr><tr><td>A03:2025</td><td>Software Supply Chain Failures</td></tr><tr><td>A04:2025</td><td>Cryptographic Failures</td></tr><tr><td>A05:2025</td><td>Injection</td></tr><tr><td>A06:2025</td><td>Insecure Design</td></tr><tr><td>A07:2025</td><td>Authentication Failures</td></tr><tr><td>A08:2025</td><td>Software or Data Integrity Failures</td></tr><tr><td>A09:2025</td><td>Security Logging and Alerting Failures</td></tr><tr><td>A10:2025</td><td>Mishandling of Exceptional Conditions</td></tr></table>
+<div class="two">
+<div><h2>Check coverage</h2>
+<table><tr><th>Check</th><th>What it probes</th><th>Result</th></tr><tr><td>admin-force-browse</td><td>Admin surface reachable without login</td><td class=''>clean / not applicable</td></tr><tr><td>clickjack</td><td>Page can be framed (clickjacking)</td><td class=''>clean / not applicable</td></tr><tr><td>cmdi-echo</td><td>OS command injection</td><td class=''>clean / not applicable</td></tr><tr><td>cookie-httponly</td><td>Session cookie without HttpOnly</td><td class=''>clean / not applicable</td></tr><tr><td>cookie-long-life</td><td>Session cookie lives for a very long time</td><td class=''>clean / not applicable</td></tr><tr><td>cookie-plaintext</td><td>Session cookie issued over HTTP</td><td class='ok'>FIRED</td></tr><tr><td>cookie-samesite</td><td>Session cookie without SameSite</td><td class=''>clean / not applicable</td></tr><tr><td>cookie-samesite-none</td><td>SameSite=None cookie without Secure</td><td class=''>clean / not applicable</td></tr><tr><td>cookie-secure</td><td>Session cookie without Secure flag</td><td class=''>clean / not applicable</td></tr><tr><td>cors-null</td><td>CORS trusts the null origin</td><td class=''>clean / not applicable</td></tr><tr><td>cors-reflect</td><td>CORS reflects arbitrary Origin</td><td class=''>clean / not applicable</td></tr><tr><td>cors-star</td><td>Wildcard CORS on an authenticated endpoint</td><td class=''>clean / not applicable</td></tr><tr><td>csrf-token-missing</td><td>State-changing form without CSRF token</td><td class=''>clean / not applicable</td></tr><tr><td>dir-listing</td><td>Directory listing enabled</td><td class=''>clean / not applicable</td></tr><tr><td>err-stacktrace</td><td>Stack trace or debug page exposed</td><td class=''>clean / not applicable</td></tr><tr><td>exp-admin-panel</td><td>Admin interface reachable from the internet</td><td class=''>clean / not applicable</td></tr><tr><td>exp-api-docs</td><td>API documentation exposed publicly</td><td class=''>clean / not applicable</td></tr><tr><td>exp-aws</td><td>Cloud credentials file exposed</td><td class=''>clean / not applicable</td></tr><tr><td>exp-backup</td><td>Backup or archive file exposed</td><td class=''>clean / not applicable</td></tr><tr><td>exp-config</td><td>Configuration file exposed</td><td class=''>clean / not applicable</td></tr><tr><td>exp-debug-endpoint</td><td>Debug/monitoring endpoint exposed</td><td class=''>clean / not applicable</td></tr><tr><td>exp-deps</td><td>Dependency manifest exposed</td><td class=''>clean / not applicable</td></tr><tr><td>exp-env</td><td>Environment file exposed</td><td class=''>clean / not applicable</td></tr><tr><td>exp-git</td><td>Git repository exposed on the server</td><td class=''>clean / not applicable</td></tr><tr><td>exp-keyfile</td><td>Private key file exposed on the server</td><td class=''>clean / not applicable</td></tr><tr><td>exp-sourcemap</td><td>Source map published</td><td class=''>clean / not applicable</td></tr><tr><td>graphql-introspection</td><td>GraphQL introspection enabled in production</td><td class=''>clean / not applicable</td></tr><tr><td>hdr-banner</td><td>Server version disclosed in banner</td><td class=''>clean / not applicable</td></tr><tr><td>hdr-cache-sensitive</td><td>Sensitive page is cacheable</td><td class=''>clean / not applicable</td></tr><tr><td>hdr-coop</td><td>Cross-Origin-Opener-Policy missing</td><td class=''>clean / not applicable</td></tr><tr><td>hdr-corp</td><td>Cross-Origin-Resource-Policy missing</td><td class=''>clean / not applicable</td></tr><tr><td>hdr-csp-missing</td><td>Content-Security-Policy missing</td><td class=''>clean / not applicable</td></tr><tr><td>hdr-csp-unsafe</td><td>CSP allows unsafe-inline or unsafe-eval</td><td class=''>clean / not applicable</td></tr><tr><td>hdr-hsts</td><td>Strict-Transport-Security missing</td><td class=''>clean / not applicable</td></tr><tr><td>hdr-nosniff</td><td>X-Content-Type-Options missing</td><td class=''>clean / not applicable</td></tr><tr><td>hdr-obsolete</td><td>Obsolete pinning/CT header present</td><td class=''>clean / not applicable</td></tr><tr><td>hdr-permissions</td><td>Permissions-Policy missing</td><td class=''>clean / not applicable</td></tr><tr><td>hdr-referrer</td><td>Referrer-Policy missing</td><td class=''>clean / not applicable</td></tr><tr><td>hdr-x-powered</td><td>Framework fingerprint header present</td><td class=''>clean / not applicable</td></tr><tr><td>hdr-xss-legacy</td><td>X-XSS-Protection set to an unsafe value</td><td class=''>clean / not applicable</td></tr><tr><td>host-header</td><td>Untrusted Host/X-Forwarded-Host reaches output</td><td class=''>clean / not applicable</td></tr><tr><td>jwt-alg-none</td><td>JWT issued with alg=none</td><td class=''>clean / not applicable</td></tr><tr><td>jwt-long-life</td><td>JWT expiration is very long</td><td class=''>clean / not applicable</td></tr><tr><td>jwt-no-exp</td><td>JWT has no expiration claim</td><td class=''>clean / not applicable</td></tr><tr><td>jwt-weak-secret</td><td>JWT signed with a guessable secret</td><td class=''>clean / not applicable</td></tr><tr><td>method-put</td><td>Write methods accepted (PUT/DELETE)</td><td class=''>clean / not applicable</td></tr><tr><td>method-trace</td><td>HTTP TRACE enabled</td><td class=''>clean / not applicable</td></tr><tr><td>mixed-content</td><td>Mixed content on an HTTPS page</td><td class=''>clean / not applicable</td></tr><tr><td>no-tls</td><td>Site served over plain HTTP</td><td class='ok'>FIRED</td></tr><tr><td>ratelimit-login</td><td>No rate limit observed on login</td><td class=''>clean / not applicable</td></tr><tr><td>redirect-open</td><td>Open redirect</td><td class=''>clean / not applicable</td></tr><tr><td>robots-disclosure</td><td>robots.txt reveals sensitive paths</td><td class=''>clean / not applicable</td></tr><tr><td>sec-txt-missing</td><td>security.txt missing</td><td class=''>clean / not applicable</td></tr><tr><td>secret-leak</td><td>Secret or live API key shipped to the browser</td><td class=''>clean / not applicable</td></tr><tr><td>sqli-boolean</td><td>Possible SQL injection (boolean differential)</td><td class=''>clean / not applicable</td></tr><tr><td>sqli-error</td><td>SQL injection (database error revealed)</td><td class=''>clean / not applicable</td></tr><tr><td>sri-missing</td><td>Third-party script without Subresource Integrity</td><td class=''>clean / not applicable</td></tr><tr><td>subdomain-dangling</td><td>Certificate-log subdomain no longer resolves</td><td class=''>clean / not applicable</td></tr><tr><td>tls-expiry</td><td>TLS certificate expiring soon</td><td class=''>clean / not applicable</td></tr><tr><td>tls-legacy</td><td>Legacy TLS protocol accepted</td><td class=''>clean / not applicable</td></tr><tr><td>tls-unverified</td><td>TLS certificate not trusted or mismatched</td><td class=''>clean / not applicable</td></tr><tr><td>traversal</td><td>Path traversal</td><td class=''>clean / not applicable</td></tr><tr><td>xss-reflected</td><td>Reflected cross-site scripting</td><td class=''>clean / not applicable</td></tr></table></div>
+<div><h2>Recon</h2><table><tr><th>Item</th><th>Value</th></tr><tr><td>target</td><td>http://127.0.0.1:8931/</td></tr><tr><td>status</td><td>200</td></tr><tr><td>server</td><td>nginx </td></tr><tr><td>ip</td><td>127.0.0.1</td></tr><tr><td>requests budget</td><td>1/400</td></tr><tr><td>robots.txt</td><td>3 lines</td></tr><tr><td>sitemap.xml</td><td>parsed</td></tr><tr><td>page</td><td>http://127.0.0.1:8931/ :: Quant IQ QA</td></tr><tr><td>page</td><td>http://127.0.0.1:8931/item?id=1 :: Item</td></tr><tr><td>page</td><td>http://127.0.0.1:8931/login :: Login</td></tr><tr><td>page</td><td>http://127.0.0.1:8931/search?q=hello :: Search</td></tr><tr><td>js assets scanned</td><td>1</td></tr><tr><td>endpoints mined from js</td><td>2</td></tr><tr><td>wayback</td><td>off (add --wayback)</td></tr><tr><td>ct-log</td><td>off (add --ct-log)</td></tr><tr><td>security.txt</td><td>/security.txt</td></tr></table>
+<h2>Engine notes</h2><ul class="muted"><li>mode: active (scenario full)</li><li>file reflects input but appears escaped (no XSS found)</li><li>request error http://127.0.0.1:8931/redirect?to=%2Fhome+AND+1%3D1: InvalidURL: URL can&#x27;t contain control characters. &#x27;/home AND 1=1&#x27; (found at least &#x27; &#x27;)</li><li>request error http://127.0.0.1:8931/redirect?to=%2Fhome+AND+1%3D2: InvalidURL: URL can&#x27;t contain control characters. &#x27;/home AND 1=2&#x27; (found at least &#x27; &#x27;)</li><li>request error http://127.0.0.1:8931/redirect?to=%2Fhome%3B+echo+QX3ed574bddf: InvalidURL: URL can&#x27;t contain control characters. &#x27;/home; echo QX3ed574bddf&#x27; (found at least &#x27; &#x27;)</li><li>request error http://127.0.0.1:8931/redirect?to=%2Fhome+%7C+echo+QXf34c3090d6: InvalidURL: URL can&#x27;t contain control characters. &#x27;/home | echo QXf34c3090d6&#x27; (found at least &#x27; &#x27;)</li><li>request error http://127.0.0.1:8931/redirect?to=%2Fhome+%26%26+echo+QX531afcfe2f: InvalidURL: URL can&#x27;t contain control characters. &#x27;/home &amp;&amp; echo QX531afcfe2f&#x27; (found at least &#x27; &#x27;)</li><li>q reflects input but appears escaped (no XSS found)</li></ul></div>
+</div>
+<h2>Method and safety rails</h2>
+<p class="muted">Scope gate: every request host must match the allowlist, or it is
+never sent. Rate limit 60.0 req/s with jitter, hard budget
+400 requests, identifiable User-Agent, benign payloads only
+(canaries, error signatures, echo markers), no brute force, no DoS, no data
+modification, robots.txt honored during discovery. Critical/high findings are
+re-tested once; failures are downgraded to candidate.
+Standards: OWASP Top 10:2025, OWASP WSTG, OWASP Cheat Sheet Series,
+NIST SP 800-115, PTES.</p>
+<p class="muted">redteam.py v1.1.0 · generated for the owner of
+127.0.0.1 · re-run after each fix to confirm the score moves.</p>
+</div></body></html>

@@ -1,0 +1,1135 @@
+{
+  "tool": {
+    "name": "redteam.py",
+    "version": "1.1.0"
+  },
+  "target": "http://127.0.0.1:8931/",
+  "scope": [
+    "127.0.0.1"
+  ],
+  "started_utc": "2026-09-25T18:06:58+00:00",
+  "finished_utc": "2026-09-25T18:07:02+00:00",
+  "scenario": "full",
+  "requests_used": 148,
+  "budget": 400,
+  "stopped_early": null,
+  "score": 0.0,
+  "counts": {
+    "CRITICAL": 7,
+    "HIGH": 14,
+    "MEDIUM": 20,
+    "LOW": 10,
+    "INFO": 3
+  },
+  "recon": [
+    [
+      "target",
+      "http://127.0.0.1:8931/"
+    ],
+    [
+      "status",
+      "200"
+    ],
+    [
+      "server",
+      "nginx/1.18.0 "
+    ],
+    [
+      "ip",
+      "127.0.0.1"
+    ],
+    [
+      "requests budget",
+      "1/400"
+    ],
+    [
+      "robots.txt",
+      "4 lines"
+    ],
+    [
+      "sitemap.xml",
+      "parsed"
+    ],
+    [
+      "page",
+      "http://127.0.0.1:8931/ :: Quant IQ QA"
+    ],
+    [
+      "page",
+      "http://127.0.0.1:8931/assets/ :: Index of /assets"
+    ],
+    [
+      "page",
+      "http://127.0.0.1:8931/item?id=1 :: Item"
+    ],
+    [
+      "page",
+      "http://127.0.0.1:8931/login :: Login"
+    ],
+    [
+      "page",
+      "http://127.0.0.1:8931/search?q=hello :: Search"
+    ],
+    [
+      "js assets scanned",
+      "1"
+    ],
+    [
+      "endpoints mined from js",
+      "2"
+    ],
+    [
+      "wayback",
+      "off (add --wayback)"
+    ],
+    [
+      "ct-log",
+      "off (add --ct-log)"
+    ],
+    [
+      "server version",
+      "nginx/1.18.0 "
+    ]
+  ],
+  "notes": [
+    "mode: active (scenario full)",
+    "request error http://127.0.0.1:8931/redirect?to=%2Fhome+AND+1%3D1: InvalidURL: URL can't contain control characters. '/home AND 1=1' (found at least ' ')",
+    "request error http://127.0.0.1:8931/redirect?to=%2Fhome+AND+1%3D2: InvalidURL: URL can't contain control characters. '/home AND 1=2' (found at least ' ')",
+    "request error http://127.0.0.1:8931/redirect?to=%2Fhome%3B+echo+QX5907d2b2cc: InvalidURL: URL can't contain control characters. '/home; echo QX5907d2b2cc' (found at least ' ')",
+    "request error http://127.0.0.1:8931/redirect?to=%2Fhome+%7C+echo+QX2f13a9994b: InvalidURL: URL can't contain control characters. '/home | echo QX2f13a9994b' (found at least ' ')",
+    "request error http://127.0.0.1:8931/redirect?to=%2Fhome+%26%26+echo+QX801549f265: InvalidURL: URL can't contain control characters. '/home && echo QX801549f265' (found at least ' ')",
+    "http://127.0.0.1:8931/transfer: no CSRF token and no SameSite cookie attribute",
+    "http://127.0.0.1:8931/login: no CSRF token and no SameSite cookie attribute"
+  ],
+  "findings": [
+    {
+      "id": "F001",
+      "check_id": "robots-disclosure",
+      "title": "robots.txt reveals sensitive paths",
+      "severity": "LOW",
+      "owasp": "A02",
+      "confidence": "high",
+      "verified": false,
+      "url": "http://127.0.0.1:8931/robots.txt",
+      "param": null,
+      "evidence": "Disallow: /admin",
+      "fix": "remove secret paths from robots.txt, block them at the server instead",
+      "impact": "disallowed admin/backup paths are published to everyone",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/"
+      ]
+    },
+    {
+      "id": "F002",
+      "check_id": "dir-listing",
+      "title": "Directory listing enabled",
+      "severity": "MEDIUM",
+      "owasp": "A02",
+      "confidence": "high",
+      "verified": false,
+      "url": "http://127.0.0.1:8931/assets/",
+      "param": null,
+      "evidence": "Index of /assets",
+      "fix": "autoindex off; (nginx) / Options -Indexes (Apache)",
+      "impact": "attackers enumerate backups, uploads and forgotten files",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/"
+      ]
+    },
+    {
+      "id": "F003",
+      "check_id": "sec-txt-missing",
+      "title": "security.txt missing",
+      "severity": "INFO",
+      "owasp": "RFC 9116",
+      "confidence": "high",
+      "verified": false,
+      "url": "http://127.0.0.1:8931/.well-known/security.txt",
+      "param": null,
+      "evidence": "no RFC 9116 security.txt found",
+      "fix": "publish /.well-known/security.txt with Contact: mailto:you@domain and Policy: link",
+      "impact": "researchers have no documented channel to report issues to you",
+      "detail": "",
+      "refs": [
+        "https://cheatsheetseries.owasp.org/cheatsheets/Reporting_Cheat_Sheet.html"
+      ]
+    },
+    {
+      "id": "F004",
+      "check_id": "no-tls",
+      "title": "Site served over plain HTTP",
+      "severity": "HIGH",
+      "owasp": "A04",
+      "confidence": "high",
+      "verified": true,
+      "url": "http://127.0.0.1:8931/",
+      "param": null,
+      "evidence": "target served over http://",
+      "fix": "redirect all HTTP to HTTPS and serve only TLS 1.2+, e.g. nginx: return 301 https://$host$request_uri;",
+      "impact": "an attacker on the same network reads and edits every request",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A04_2025-Cryptographic_Failures/"
+      ]
+    },
+    {
+      "id": "F005",
+      "check_id": "hdr-csp-missing",
+      "title": "Content-Security-Policy missing",
+      "severity": "MEDIUM",
+      "owasp": "A02",
+      "confidence": "high",
+      "verified": false,
+      "url": "http://127.0.0.1:8931/",
+      "param": null,
+      "evidence": "header absent",
+      "fix": "start report-only: Content-Security-Policy-Report-Only: default-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; report-uri /csp-report, then enforce",
+      "impact": "injected scripts run freely, XSS impact jumps from leak to takeover",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/"
+      ]
+    },
+    {
+      "id": "F006",
+      "check_id": "clickjack",
+      "title": "Page can be framed (clickjacking)",
+      "severity": "MEDIUM",
+      "owasp": "A02",
+      "confidence": "high",
+      "verified": false,
+      "url": "http://127.0.0.1:8931/",
+      "param": null,
+      "evidence": "no XFO and no frame-ancestors",
+      "fix": "add_header X-Frame-Options \"DENY\" always; and CSP frame-ancestors 'none'",
+      "impact": "an invisible overlay on a trusted page hijacks clicks and inputs",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/"
+      ]
+    },
+    {
+      "id": "F007",
+      "check_id": "hdr-referrer",
+      "title": "Referrer-Policy missing",
+      "severity": "LOW",
+      "owasp": "A02",
+      "confidence": "high",
+      "verified": false,
+      "url": "http://127.0.0.1:8931/",
+      "param": null,
+      "evidence": "header absent",
+      "fix": "add_header Referrer-Policy \"strict-origin-when-cross-origin\" always;",
+      "impact": "full URLs (with tokens in query strings) leak to third parties",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/"
+      ]
+    },
+    {
+      "id": "F008",
+      "check_id": "hdr-permissions",
+      "title": "Permissions-Policy missing",
+      "severity": "LOW",
+      "owasp": "A02",
+      "confidence": "high",
+      "verified": false,
+      "url": "http://127.0.0.1:8931/",
+      "param": null,
+      "evidence": "header absent",
+      "fix": "add_header Permissions-Policy \"geolocation=(), camera=(), microphone=()\" always;",
+      "impact": "scripts can reach camera, microphone, geolocation without consent gating",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/"
+      ]
+    },
+    {
+      "id": "F009",
+      "check_id": "hdr-coop",
+      "title": "Cross-Origin-Opener-Policy missing",
+      "severity": "INFO",
+      "owasp": "A02",
+      "confidence": "high",
+      "verified": false,
+      "url": "http://127.0.0.1:8931/",
+      "param": null,
+      "evidence": "header absent",
+      "fix": "add_header Cross-Origin-Opener-Policy \"same-origin\" always;",
+      "impact": "cross-origin documents can share a browsing context (Spectre-class risk)",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/"
+      ]
+    },
+    {
+      "id": "F010",
+      "check_id": "hdr-corp",
+      "title": "Cross-Origin-Resource-Policy missing",
+      "severity": "INFO",
+      "owasp": "A02",
+      "confidence": "high",
+      "verified": false,
+      "url": "http://127.0.0.1:8931/",
+      "param": null,
+      "evidence": "header absent",
+      "fix": "add_header Cross-Origin-Resource-Policy \"same-site\" always; (test PDFs first)",
+      "impact": "responses can be read cross-origin in no-cors contexts",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/"
+      ]
+    },
+    {
+      "id": "F011",
+      "check_id": "hdr-nosniff",
+      "title": "X-Content-Type-Options missing",
+      "severity": "MEDIUM",
+      "owasp": "A02",
+      "confidence": "high",
+      "verified": false,
+      "url": "http://127.0.0.1:8931/",
+      "param": null,
+      "evidence": "header absent",
+      "fix": "add_header X-Content-Type-Options \"nosniff\" always;",
+      "impact": "browsers MIME-sniff responses into executable content",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/"
+      ]
+    },
+    {
+      "id": "F012",
+      "check_id": "hdr-cache-sensitive",
+      "title": "Sensitive page is cacheable",
+      "severity": "MEDIUM",
+      "owasp": "A02",
+      "confidence": "high",
+      "verified": false,
+      "url": "http://127.0.0.1:8931/login",
+      "param": null,
+      "evidence": "no Cache-Control on a sensitive page",
+      "fix": "add_header Cache-Control \"no-store, private\" always; on login/account/API responses",
+      "impact": "shared caches and browsers persist authenticated pages",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/"
+      ]
+    },
+    {
+      "id": "F013",
+      "check_id": "hdr-x-powered",
+      "title": "Framework fingerprint header present",
+      "severity": "LOW",
+      "owasp": "A02",
+      "confidence": "high",
+      "verified": false,
+      "url": "http://127.0.0.1:8931/",
+      "param": null,
+      "evidence": "X-Powered-By: Express/4.18.2",
+      "fix": "suppress it: nginx proxy_hide_header X-Powered-By;, or framework config expose_php=Off / X-Powered-By off",
+      "impact": "attackers match your exact framework/version to known exploits",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/"
+      ]
+    },
+    {
+      "id": "F014",
+      "check_id": "hdr-banner",
+      "title": "Server version disclosed in banner",
+      "severity": "LOW",
+      "owasp": "A03",
+      "confidence": "high",
+      "verified": false,
+      "url": "http://127.0.0.1:8931/",
+      "param": null,
+      "evidence": "Server: nginx/1.18.0 ",
+      "fix": "nginx: server_tokens off;, or proxy_hide_header Server; then set a generic Server value at the edge",
+      "impact": "version-matched exploits (CVE lookups) become one-shot",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A03_2025-Software_Supply_Chain_Failures/"
+      ]
+    },
+    {
+      "id": "F015",
+      "check_id": "host-header",
+      "title": "Untrusted Host/X-Forwarded-Host reaches output",
+      "severity": "MEDIUM",
+      "owasp": "A07",
+      "confidence": "high",
+      "verified": false,
+      "url": "http://127.0.0.1:8931/",
+      "param": null,
+      "evidence": "X-Forwarded-Host qx-host-canary.invalid reflected in body",
+      "fix": "build URLs from a configured canonical origin, never from request headers; reject unknown Host values at the proxy",
+      "impact": "password-reset and absolute links can be poisoned to attacker infrastructure",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A07_2025-Authentication_Failures/"
+      ]
+    },
+    {
+      "id": "F016",
+      "check_id": "cors-reflect",
+      "title": "CORS reflects arbitrary Origin",
+      "severity": "HIGH",
+      "owasp": "A01",
+      "confidence": "high",
+      "verified": true,
+      "url": "http://127.0.0.1:8931/",
+      "param": null,
+      "evidence": "ACAO: https://qx-canary.invalid | ACAC: true",
+      "fix": "allowlist exact origins server-side, never echo the request Origin; keep Access-Control-Allow-Credentials off unless required",
+      "impact": "any website can read this origin's responses with the victim's cookies",
+      "detail": "two different attacker origins were both echoed back",
+      "refs": [
+        "https://top10.owasp.org/2025/A01_2025-Broken_Access_Control/"
+      ]
+    },
+    {
+      "id": "F017",
+      "check_id": "cookie-httponly",
+      "title": "Session cookie without HttpOnly",
+      "severity": "MEDIUM",
+      "owasp": "A07",
+      "confidence": "high",
+      "verified": false,
+      "url": "http://127.0.0.1:8931/",
+      "param": "sessionid",
+      "evidence": "Set-Cookie: sessionid=... without HttpOnly",
+      "fix": "add HttpOnly to all session cookies",
+      "impact": "any XSS payload reads document.cookie and exfiltrates the session",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A07_2025-Authentication_Failures/"
+      ]
+    },
+    {
+      "id": "F018",
+      "check_id": "cookie-samesite",
+      "title": "Session cookie without SameSite",
+      "severity": "LOW",
+      "owasp": "A07",
+      "confidence": "high",
+      "verified": false,
+      "url": "http://127.0.0.1:8931/",
+      "param": "sessionid",
+      "evidence": "Set-Cookie: sessionid=... without SameSite",
+      "fix": "add SameSite=Lax (or Strict for state-changing flows)",
+      "impact": "cross-site requests carry the session, widening CSRF",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A07_2025-Authentication_Failures/"
+      ]
+    },
+    {
+      "id": "F019",
+      "check_id": "cookie-plaintext",
+      "title": "Session cookie issued over HTTP",
+      "severity": "HIGH",
+      "owasp": "A04",
+      "confidence": "high",
+      "verified": false,
+      "url": "http://127.0.0.1:8931/",
+      "param": "sessionid",
+      "evidence": "session cookie sessionid issued over plain HTTP",
+      "fix": "serve the site over HTTPS only and set Secure on every session cookie",
+      "impact": "session identifiers are readable and replayable on the wire",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A04_2025-Cryptographic_Failures/"
+      ]
+    },
+    {
+      "id": "F020",
+      "check_id": "cookie-httponly",
+      "title": "Session cookie without HttpOnly",
+      "severity": "MEDIUM",
+      "owasp": "A07",
+      "confidence": "high",
+      "verified": false,
+      "url": "http://127.0.0.1:8931/",
+      "param": "auth",
+      "evidence": "Set-Cookie: auth=***REDACTED*** without HttpOnly",
+      "fix": "add HttpOnly to all session cookies",
+      "impact": "any XSS payload reads document.cookie and exfiltrates the session",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A07_2025-Authentication_Failures/"
+      ]
+    },
+    {
+      "id": "F021",
+      "check_id": "cookie-samesite",
+      "title": "Session cookie without SameSite",
+      "severity": "LOW",
+      "owasp": "A07",
+      "confidence": "high",
+      "verified": false,
+      "url": "http://127.0.0.1:8931/",
+      "param": "auth",
+      "evidence": "Set-Cookie: auth=***REDACTED*** without SameSite",
+      "fix": "add SameSite=Lax (or Strict for state-changing flows)",
+      "impact": "cross-site requests carry the session, widening CSRF",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A07_2025-Authentication_Failures/"
+      ]
+    },
+    {
+      "id": "F022",
+      "check_id": "cookie-plaintext",
+      "title": "Session cookie issued over HTTP",
+      "severity": "HIGH",
+      "owasp": "A04",
+      "confidence": "high",
+      "verified": false,
+      "url": "http://127.0.0.1:8931/",
+      "param": "auth",
+      "evidence": "session cookie auth issued over plain HTTP",
+      "fix": "serve the site over HTTPS only and set Secure on every session cookie",
+      "impact": "session identifiers are readable and replayable on the wire",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A04_2025-Cryptographic_Failures/"
+      ]
+    },
+    {
+      "id": "F023",
+      "check_id": "jwt-weak-secret",
+      "title": "JWT signed with a guessable secret",
+      "severity": "CRITICAL",
+      "owasp": "A04",
+      "confidence": "high",
+      "verified": false,
+      "url": "http://127.0.0.1:8931/",
+      "param": "jwt",
+      "evidence": "signature validates with candidate secret 'secret' (offline check)",
+      "fix": "switch to RS256/ES256 or a 256-bit random secret, store it in a secret manager, rotate it",
+      "impact": "attackers forge tokens offline, no login needed",
+      "detail": "verified offline, no requests to the target",
+      "refs": [
+        "https://top10.owasp.org/2025/A04_2025-Cryptographic_Failures/"
+      ]
+    },
+    {
+      "id": "F024",
+      "check_id": "jwt-no-exp",
+      "title": "JWT has no expiration claim",
+      "severity": "MEDIUM",
+      "owasp": "A07",
+      "confidence": "high",
+      "verified": false,
+      "url": "http://127.0.0.1:8931/",
+      "param": "jwt",
+      "evidence": "claims present: sub",
+      "fix": "set short exp (minutes to hours), validate exp/nbf/iss/aud, back long sessions with refresh tokens",
+      "impact": "tokens live forever, logout and password change do not revoke them",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A07_2025-Authentication_Failures/"
+      ]
+    },
+    {
+      "id": "F025",
+      "check_id": "secret-leak",
+      "title": "Secret or live API key shipped to the browser",
+      "severity": "CRITICAL",
+      "owasp": "A02",
+      "confidence": "high",
+      "verified": true,
+      "url": "http://127.0.0.1:8931/assets/app.js",
+      "param": "AWS access key ID",
+      "evidence": "AWS access key ID in served content: AKIAIO**********MPLE (value redacted)",
+      "fix": "pull the key out of the client bundle at once, rotate it, issue a scoped server-side replacement, restrict the old key",
+      "impact": "any visitor can read the key and spend your money or your data",
+      "detail": "client-visible secret: treat as compromised, rotate it and move it server-side",
+      "refs": [
+        "https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/"
+      ]
+    },
+    {
+      "id": "F026",
+      "check_id": "secret-leak",
+      "title": "Secret or live API key shipped to the browser",
+      "severity": "CRITICAL",
+      "owasp": "A02",
+      "confidence": "high",
+      "verified": true,
+      "url": "http://127.0.0.1:8931/assets/app.js",
+      "param": "Stripe live secret",
+      "evidence": "Stripe live secret in served content: sk_liv**********************beef (value redacted)",
+      "fix": "pull the key out of the client bundle at once, rotate it, issue a scoped server-side replacement, restrict the old key",
+      "impact": "any visitor can read the key and spend your money or your data",
+      "detail": "client-visible secret: treat as compromised, rotate it and move it server-side",
+      "refs": [
+        "https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/"
+      ]
+    },
+    {
+      "id": "F027",
+      "check_id": "exp-git",
+      "title": "Git repository exposed on the server",
+      "severity": "HIGH",
+      "owasp": "A02",
+      "confidence": "high",
+      "verified": true,
+      "url": "http://127.0.0.1:8931/.git/HEAD",
+      "param": null,
+      "evidence": "git HEAD ref: text/plain 21B, status 200",
+      "fix": "remove .git from deployment artifacts, deny dotfiles at the server: location ~ /\\.git { deny all; }",
+      "impact": "the full source tree and history ship to the attacker, secrets inside get harvested",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/"
+      ]
+    },
+    {
+      "id": "F028",
+      "check_id": "exp-env",
+      "title": "Environment file exposed",
+      "severity": "CRITICAL",
+      "owasp": "A02",
+      "confidence": "high",
+      "verified": true,
+      "url": "http://127.0.0.1:8931/.env",
+      "param": null,
+      "evidence": "env assignments: text/plain 39B, status 200",
+      "fix": "move .env outside the web root, deny dotfiles, then rotate EVERY secret it ever contained",
+      "impact": "API keys, DB passwords and tokens are handed over in one request",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/"
+      ]
+    },
+    {
+      "id": "F029",
+      "check_id": "exp-aws",
+      "title": "Cloud credentials file exposed",
+      "severity": "CRITICAL",
+      "owasp": "A02",
+      "confidence": "high",
+      "verified": true,
+      "url": "http://127.0.0.1:8931/.aws/credentials",
+      "param": null,
+      "evidence": "aws credentials block: text/plain 39B, status 200",
+      "fix": "remove the file, rotate those credentials immediately, use an instance role instead of keys on disk",
+      "impact": "your cloud account is directly compromiseable",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/"
+      ]
+    },
+    {
+      "id": "F030",
+      "check_id": "exp-config",
+      "title": "Configuration file exposed",
+      "severity": "MEDIUM",
+      "owasp": "A02",
+      "confidence": "high",
+      "verified": false,
+      "url": "http://127.0.0.1:8931/config.json",
+      "param": null,
+      "evidence": "config keys: application/json 29B, status 200",
+      "fix": "block config filenames at the server and stop shipping them in builds",
+      "impact": "internal paths, credentials or feature flags become known",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/"
+      ]
+    },
+    {
+      "id": "F031",
+      "check_id": "exp-deps",
+      "title": "Dependency manifest exposed",
+      "severity": "LOW",
+      "owasp": "A03",
+      "confidence": "high",
+      "verified": false,
+      "url": "http://127.0.0.1:8931/package.json",
+      "param": null,
+      "evidence": "manifest: application/json 54B, status 200",
+      "fix": "deny package manifests at the edge; run npm audit / osv-scanner to check those versions yourself first",
+      "impact": "exact component versions are known, CVE matching becomes one-shot",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A03_2025-Software_Supply_Chain_Failures/"
+      ]
+    },
+    {
+      "id": "F032",
+      "check_id": "exp-debug-endpoint",
+      "title": "Debug/monitoring endpoint exposed",
+      "severity": "MEDIUM",
+      "owasp": "A02",
+      "confidence": "high",
+      "verified": false,
+      "url": "http://127.0.0.1:8931/server-status",
+      "param": null,
+      "evidence": "apache status: text/html 90B, status 200",
+      "fix": "disable actuator/phpinfo/server-status style endpoints in production, bind them to localhost or auth",
+      "impact": "runtime config, env values and internal state are disclosed",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/"
+      ]
+    },
+    {
+      "id": "F033",
+      "check_id": "exp-backup",
+      "title": "Backup or archive file exposed",
+      "severity": "HIGH",
+      "owasp": "A02",
+      "confidence": "high",
+      "verified": true,
+      "url": "http://127.0.0.1:8931/backup.zip",
+      "param": null,
+      "evidence": "zip magic: application/zip 15B, status 200",
+      "fix": "delete backups from the web root, store them outside docroot, deny *.bak *.old *.zip *.sql *.tar.gz",
+      "impact": "source code, databases or keys leak through leftover deploy files",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/"
+      ]
+    },
+    {
+      "id": "F034",
+      "check_id": "exp-keyfile",
+      "title": "Private key file exposed on the server",
+      "severity": "CRITICAL",
+      "owasp": "A04",
+      "confidence": "high",
+      "verified": true,
+      "url": "http://127.0.0.1:8931/id_rsa",
+      "param": null,
+      "evidence": "private key: text/plain 86B, status 200",
+      "fix": "remove the key from the web root immediately and rotate it (reissue the certificate / API key), store keys outside docroot",
+      "impact": "attackers decrypt recorded traffic or impersonate your services",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A04_2025-Cryptographic_Failures/"
+      ]
+    },
+    {
+      "id": "F035",
+      "check_id": "exp-api-docs",
+      "title": "API documentation exposed publicly",
+      "severity": "MEDIUM",
+      "owasp": "A02",
+      "confidence": "high",
+      "verified": false,
+      "url": "http://127.0.0.1:8931/openapi.json",
+      "param": null,
+      "evidence": "openapi spec: application/json 50B, status 200",
+      "fix": "serve OpenAPI/Swagger only in staging or behind auth; block schema paths at the edge",
+      "impact": "the full API surface, including forgotten endpoints, is handed to attackers",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/"
+      ]
+    },
+    {
+      "id": "F036",
+      "check_id": "exp-admin-panel",
+      "title": "Admin interface reachable from the internet",
+      "severity": "HIGH",
+      "owasp": "A02",
+      "confidence": "high",
+      "verified": true,
+      "url": "http://127.0.0.1:8931/phpmyadmin/",
+      "param": null,
+      "evidence": "phpmyadmin: text/html; charset=utf-8 166B, status 200",
+      "fix": "bind admin panels to localhost or a VPN, add IP allowlisting plus MFA, remove them from public DNS",
+      "impact": "database or server admin panels are brute-force and 0-day targets",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/"
+      ]
+    },
+    {
+      "id": "F037",
+      "check_id": "err-stacktrace",
+      "title": "Stack trace or debug page exposed",
+      "severity": "HIGH",
+      "owasp": "A10",
+      "confidence": "high",
+      "verified": true,
+      "url": "http://127.0.0.1:8931/qx-err-ed91cffc",
+      "param": null,
+      "evidence": "Traceback (most recent call last):\n  File \"/app/server.py\", line 42, in handler\nKeyError: 'missing'\n",
+      "fix": "return generic errors with a correlation ID, keep traces in protected logs, disable debug mode in production",
+      "impact": "internal paths, framework versions and query shapes leak, aiding follow-up attacks",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A10_2025-Mishandling_of_Exceptional_Conditions/"
+      ]
+    },
+    {
+      "id": "F038",
+      "check_id": "graphql-introspection",
+      "title": "GraphQL introspection enabled in production",
+      "severity": "MEDIUM",
+      "owasp": "A02",
+      "confidence": "high",
+      "verified": false,
+      "url": "http://127.0.0.1:8931/graphql",
+      "param": null,
+      "evidence": "introspection answered, 50B: {\"data\":{\"__schema\":{\"types\":[{\"name\":\"Query\"}]}}}",
+      "fix": "disable introspection in production (Apollo: introspection: false; Hasura/GraphQL Yoga: disable for anon roles)",
+      "impact": "the full schema, including hidden mutations, is enumerable by anyone",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/"
+      ]
+    },
+    {
+      "id": "F039",
+      "check_id": "xss-reflected",
+      "title": "Reflected cross-site scripting",
+      "severity": "HIGH",
+      "owasp": "A05",
+      "confidence": "high",
+      "verified": true,
+      "url": "http://127.0.0.1:8931/download?file=readme.txt",
+      "param": "file",
+      "evidence": "raw echo of '<\">\\'QX5a4fabf36ada0fee' in response body",
+      "fix": "context-aware output encoding (framework auto-escape), avoid innerHTML, add CSP as a second layer",
+      "impact": "attacker links hijack any victim's session on your domain",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A05_2025-Injection/"
+      ]
+    },
+    {
+      "id": "F040",
+      "check_id": "traversal",
+      "title": "Path traversal",
+      "severity": "HIGH",
+      "owasp": "A05",
+      "confidence": "high",
+      "verified": true,
+      "url": "http://127.0.0.1:8931/download?file=readme.txt",
+      "param": "file",
+      "evidence": "planted canary QXPLANT.txt returned",
+      "fix": "canonicalize and verify the resolved path stays under the allowed base dir, allowlist filenames",
+      "impact": "arbitrary file read: configs, keys, source",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A05_2025-Injection/"
+      ]
+    },
+    {
+      "id": "F041",
+      "check_id": "sqli-boolean",
+      "title": "Possible SQL injection (boolean differential)",
+      "severity": "MEDIUM",
+      "owasp": "A05",
+      "confidence": "medium",
+      "verified": false,
+      "url": "http://127.0.0.1:8931/item?id=1",
+      "param": "id",
+      "evidence": "AND 1=1 matches baseline (1.00) while AND 1=2 diverges (0.69)",
+      "fix": "same fix as error-based SQLi: parameterized queries everywhere",
+      "impact": "attacker can walk the database one boolean at a time",
+      "detail": "boolean differential is a strong signal; confirm manually before calling it SQLi",
+      "refs": [
+        "https://top10.owasp.org/2025/A05_2025-Injection/"
+      ]
+    },
+    {
+      "id": "F042",
+      "check_id": "redirect-open",
+      "title": "Open redirect",
+      "severity": "MEDIUM",
+      "owasp": "A06",
+      "confidence": "high",
+      "verified": false,
+      "url": "http://127.0.0.1:8931/redirect?to=/home",
+      "param": "to",
+      "evidence": "Location: //qx-canary.invalid/landing",
+      "fix": "allowlist redirect targets (path-only or known hosts), reject scheme-relative and absolute URLs",
+      "impact": "phishing links borrow your trusted domain",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A06_2025-Insecure_Design/"
+      ]
+    },
+    {
+      "id": "F043",
+      "check_id": "xss-reflected",
+      "title": "Reflected cross-site scripting",
+      "severity": "HIGH",
+      "owasp": "A05",
+      "confidence": "high",
+      "verified": true,
+      "url": "http://127.0.0.1:8931/search?q=hello",
+      "param": "q",
+      "evidence": "raw echo of '<\">\\'QX5a4fabf36a8bbcdd' in response body",
+      "fix": "context-aware output encoding (framework auto-escape), avoid innerHTML, add CSP as a second layer",
+      "impact": "attacker links hijack any victim's session on your domain",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A05_2025-Injection/"
+      ]
+    },
+    {
+      "id": "F044",
+      "check_id": "sqli-error",
+      "title": "SQL injection (database error revealed)",
+      "severity": "HIGH",
+      "owasp": "A05",
+      "confidence": "high",
+      "verified": true,
+      "url": "http://127.0.0.1:8931/search?q=hello",
+      "param": "q",
+      "evidence": "Error: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version near '' at line",
+      "fix": "use parameterized prepared statements for every value, allowlist identifiers, least-privilege DB account",
+      "impact": "the query is attacker-influenced; data theft or modification may follow",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A05_2025-Injection/"
+      ]
+    },
+    {
+      "id": "F045",
+      "check_id": "cmdi-echo",
+      "title": "OS command injection",
+      "severity": "CRITICAL",
+      "owasp": "A05",
+      "confidence": "high",
+      "verified": true,
+      "url": "http://127.0.0.1:8931/search?q=hello",
+      "param": "q",
+      "evidence": "server echoed injected marker QX608665b8af without the command text (separator '; echo')",
+      "fix": "never pass input to a shell; call fixed executables with argument arrays, allowlist inputs",
+      "impact": "the attacker runs arbitrary commands on your server, total compromise",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A05_2025-Injection/"
+      ]
+    },
+    {
+      "id": "F046",
+      "check_id": "admin-force-browse",
+      "title": "Admin surface reachable without login",
+      "severity": "HIGH",
+      "owasp": "A01",
+      "confidence": "high",
+      "verified": true,
+      "url": "http://127.0.0.1:8931/admin",
+      "param": null,
+      "evidence": "HTTP 200, 298B, no login form (title: 'Dashboard')",
+      "fix": "deny by default: authenticate every route, then authorize by role, server-side",
+      "impact": "anyone can reach privileged pages and APIs",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A01_2025-Broken_Access_Control/"
+      ]
+    },
+    {
+      "id": "F047",
+      "check_id": "admin-force-browse",
+      "title": "Admin surface reachable without login",
+      "severity": "HIGH",
+      "owasp": "A01",
+      "confidence": "high",
+      "verified": true,
+      "url": "http://127.0.0.1:8931/account",
+      "param": null,
+      "evidence": "HTTP 200, 425B, no login form (title: 'Account')",
+      "fix": "deny by default: authenticate every route, then authorize by role, server-side",
+      "impact": "anyone can reach privileged pages and APIs",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A01_2025-Broken_Access_Control/"
+      ]
+    },
+    {
+      "id": "F048",
+      "check_id": "csrf-token-missing",
+      "title": "State-changing form without CSRF token",
+      "severity": "MEDIUM",
+      "owasp": "A01",
+      "confidence": "medium",
+      "verified": false,
+      "url": "http://127.0.0.1:8931/transfer",
+      "param": "account,amount",
+      "evidence": "POST form with fields: account, amount and no hidden CSRF token",
+      "fix": "add a per-session CSRF token (constant-time compare) and SameSite cookies; never rely on secrecy of URLs",
+      "impact": "a third-party page can submit this form with the victim logged in",
+      "detail": "confirm by replaying from a cross-origin page on a dry-run endpoint",
+      "refs": [
+        "https://top10.owasp.org/2025/A01_2025-Broken_Access_Control/"
+      ]
+    },
+    {
+      "id": "F049",
+      "check_id": "csrf-token-missing",
+      "title": "State-changing form without CSRF token",
+      "severity": "MEDIUM",
+      "owasp": "A01",
+      "confidence": "medium",
+      "verified": false,
+      "url": "http://127.0.0.1:8931/login",
+      "param": "username,password",
+      "evidence": "POST form with fields: username, password and no hidden CSRF token",
+      "fix": "add a per-session CSRF token (constant-time compare) and SameSite cookies; never rely on secrecy of URLs",
+      "impact": "a third-party page can submit this form with the victim logged in",
+      "detail": "confirm by replaying from a cross-origin page on a dry-run endpoint",
+      "refs": [
+        "https://top10.owasp.org/2025/A01_2025-Broken_Access_Control/"
+      ]
+    },
+    {
+      "id": "F050",
+      "check_id": "ratelimit-login",
+      "title": "No rate limit observed on login",
+      "severity": "LOW",
+      "owasp": "A07",
+      "confidence": "high",
+      "verified": false,
+      "url": "http://127.0.0.1:8931/login",
+      "param": null,
+      "evidence": "10 rapid failed logins, statuses: [200, 200, 200, 200, 200, 200, 200, 200, 200, 200]",
+      "fix": "layer limits (edge + app): e.g. 4/min then 10/10min then 20/hour per IP+account, count failures, add CAPTCHA",
+      "impact": "credential stuffing and password spraying run at scale",
+      "detail": "no 429/lockout observed in a gentle N=10 burst; manual review recommended before concluding",
+      "refs": [
+        "https://top10.owasp.org/2025/A07_2025-Authentication_Failures/"
+      ]
+    },
+    {
+      "id": "F051",
+      "check_id": "sri-missing",
+      "title": "Third-party script without Subresource Integrity",
+      "severity": "LOW",
+      "owasp": "A08",
+      "confidence": "high",
+      "verified": false,
+      "url": "http://127.0.0.1:8931/",
+      "param": "https://cdn.example.org/lib.js",
+      "evidence": "<script src=\"https://cdn.example.org/lib.js\"> without integrity",
+      "fix": "add integrity=\"sha384-...\" and crossorigin to every cross-origin script/link, or self-host the asset",
+      "impact": "a compromised CDN silently runs attacker code in your pages",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A08_2025-Software_or_Data_Integrity_Failures/"
+      ]
+    },
+    {
+      "id": "F052",
+      "check_id": "exp-sourcemap",
+      "title": "Source map published",
+      "severity": "MEDIUM",
+      "owasp": "A08",
+      "confidence": "high",
+      "verified": false,
+      "url": "http://127.0.0.1:8931/assets/app.js.map",
+      "param": null,
+      "evidence": "source map served (61B)",
+      "fix": "strip sourceMappingURL from shipped JS or serve .map files only for internal builds",
+      "impact": "original source (including comments and internal APIs) is recoverable",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A08_2025-Software_or_Data_Integrity_Failures/"
+      ]
+    },
+    {
+      "id": "F053",
+      "check_id": "method-put",
+      "title": "Write methods accepted (PUT/DELETE)",
+      "severity": "MEDIUM",
+      "owasp": "A02",
+      "confidence": "high",
+      "verified": false,
+      "url": "http://127.0.0.1:8931/",
+      "param": null,
+      "evidence": "Allow: GET, HEAD, POST, PUT, DELETE, PATCH, OPTIONS",
+      "fix": "reject non-GET/POST at the edge, require auth and CSRF on any allowed write method",
+      "impact": "unauthenticated file upload or deletion may be possible",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/"
+      ]
+    },
+    {
+      "id": "F054",
+      "check_id": "method-trace",
+      "title": "HTTP TRACE enabled",
+      "severity": "MEDIUM",
+      "owasp": "A02",
+      "confidence": "high",
+      "verified": false,
+      "url": "http://127.0.0.1:8931/",
+      "param": null,
+      "evidence": "TRACE / HTTP/1.1\nUser-Agent: QuantIQRedTeamBot/1.0 (authorized self-testing)\nCookie: \n",
+      "fix": "disable TRACE at the server/proxy: nginx does not enable it by default, apache: TraceEnable off",
+      "impact": "cross-site tracing can echo custom headers back to scripts",
+      "detail": "",
+      "refs": [
+        "https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/"
+      ]
+    }
+  ],
+  "endpoints": [
+    "http://127.0.0.1:8931/api/v1/portfolio?id=123",
+    "http://127.0.0.1:8931/api/v1/prices"
+  ],
+  "js_assets": [
+    "http://127.0.0.1:8931/assets/app.js"
+  ],
+  "checks_available": 63,
+  "checks_fired": [
+    "admin-force-browse",
+    "clickjack",
+    "cmdi-echo",
+    "cookie-httponly",
+    "cookie-plaintext",
+    "cookie-samesite",
+    "cors-reflect",
+    "csrf-token-missing",
+    "dir-listing",
+    "err-stacktrace",
+    "exp-admin-panel",
+    "exp-api-docs",
+    "exp-aws",
+    "exp-backup",
+    "exp-config",
+    "exp-debug-endpoint",
+    "exp-deps",
+    "exp-env",
+    "exp-git",
+    "exp-keyfile",
+    "exp-sourcemap",
+    "graphql-introspection",
+    "hdr-banner",
+    "hdr-cache-sensitive",
+    "hdr-coop",
+    "hdr-corp",
+    "hdr-csp-missing",
+    "hdr-nosniff",
+    "hdr-permissions",
+    "hdr-referrer",
+    "hdr-x-powered",
+    "host-header",
+    "jwt-no-exp",
+    "jwt-weak-secret",
+    "method-put",
+    "method-trace",
+    "no-tls",
+    "ratelimit-login",
+    "redirect-open",
+    "robots-disclosure",
+    "sec-txt-missing",
+    "secret-leak",
+    "sqli-boolean",
+    "sqli-error",
+    "sri-missing",
+    "traversal",
+    "xss-reflected"
+  ]
+}
