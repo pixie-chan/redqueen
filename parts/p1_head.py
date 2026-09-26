@@ -26,13 +26,14 @@ import socket
 import ssl
 import sys
 import time
+import unicodedata
 import urllib.parse
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 
 import http.client
 
-VERSION = "1.1.0"
+VERSION = "2.0.0"
 UA = "placeholder_websiteRedTeamBot/1.0 (authorized self-testing)"
 SEV_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "INFO": 4}
 SEV_COLOR = {"CRITICAL": "#ff2d55", "HIGH": "#ff6b35", "MEDIUM": "#ffb020",

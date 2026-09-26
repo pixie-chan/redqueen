@@ -64,12 +64,24 @@ def esc(s):
     return htmllib.escape(str(s or ""))
 
 
+def _sev_filter_buttons():
+    """Built outside the report f-string on purpose: a nested f-string with
+    escaped quotes is only legal on Python 3.12+, and this project targets
+    3.10+."""
+    out = []
+    for s in ["ALL"] + list(SEV_ORDER):
+        cls = "on" if s == "ALL" else ""
+        out.append('<button class="%s" onclick="ff(\'%s\',this)">%s</button>'
+                   % (cls, s, s))
+    return "".join(out)
+
+
 def html_report(bot):
     counts = bot.counts()
     score = bot.score()
     sev_css = {"CRITICAL": "var(--cr)", "HIGH": "var(--hi)", "MEDIUM": "var(--me)",
                "LOW": "var(--lo)", "INFO": "var(--in)"}
-    shown = sorted(bot.findings, key=lambda f: (SEV_ORDER[f["severity"]],
+    shown = sorted(bot.scored(), key=lambda f: (SEV_ORDER[f["severity"]],
                                                 f["check_id"]))
     narr = [f for f in shown if f["severity"] in ("CRITICAL", "HIGH")][:3] or shown[:3]
     rows = []
@@ -93,15 +105,35 @@ def html_report(bot):
 </dl></div></details>""")
     owasp_rows = "".join(
         f"<tr><td>{k}:2025</td><td>{esc(v)}</td></tr>" for k, v in OWASP.items())
-    fired = {f['check_id'] for f in bot.findings}
     cov = "".join(
-        f"<tr><td>{esc(cid)}</td><td>{esc(CHECKS[cid][2])}</td>"
-        f"<td class='{'ok' if cid in fired else ''}'>"
-        f"{'FIRED' if cid in fired else 'clean / not applicable'}</td></tr>"
-        for cid in sorted(CHECKS))
+        f"<tr><td>{esc(r['check_id'])}</td><td>{esc(r['owasp'])}</td>"
+        f"<td>{esc(r['severity'])}</td>"
+        f"<td class='{'ok' if r['tested'] else ''}'>"
+        f"{'exercised' if r['tested'] else 'not tested'}</td>"
+        f"<td class='muted'>{esc(r['reason'])}</td></tr>"
+        for r in coverage_statement(bot))
+    warn_rows = "".join(
+        f"<tr><td class='bad'>{esc(w['code'])}</td><td>{esc(w['message'])}</td></tr>"
+        for w in bot.warnings)
+    warn_block = (f"<table><tr><th>Code</th><th>What it means for this scan</th>"
+                  f"</tr>{warn_rows}</table>" if bot.warnings else
+                  '<div class="muted ok">No scan-quality warnings: pages were '
+                  'crawled, responses were not all 401/403, and the budget '
+                  'held.</div>')
+    never = "".join(f"<tr><td>{esc(n['class'])}</td><td class='muted'>"
+                    f"{esc(n['reason'])}</td></tr>" for n in NEVER_TESTED)
+    ev_rows = "".join(
+        f"<tr><td>{esc(f['check_id'])}</td><td>{esc(f['param'] or '')}</td>"
+        f"<td class='muted'>{esc(f['evidence'][:220])}</td></tr>"
+        for f in bot.evidence_records())
+    ev_block = (f"<table><tr><th>Check</th><th>Param</th><th>Record</th></tr>"
+                f"{ev_rows}</table>" if ev_rows else
+                '<div class="muted">No evidence records for this run.</div>')
     recon = "".join(f"<tr><td>{esc(k)}</td><td>{esc(v)}</td></tr>"
                     for k, v in bot.recon)
     notes = "".join(f"<li>{esc(n)}</li>" for n in bot.notes[:40])
+    cal = bot.calibration.profile()
+    auth = bot.auth_state
     barcol = "var(--acc)" if score >= 80 else ("var(--me)" if score >= 50 else "var(--cr)")
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
@@ -130,18 +162,35 @@ unverified critical/high count half.</p>
 <h2>Attacker narrative</h2>
 {''.join(f'<div class="narr"><b>{i}. {esc(f["title"])}</b> ({f["severity"]}, {f["owasp"]})<div>{esc(f["impact"])}</div></div>' for i, f in enumerate(narr, 1)) or '<div class="muted">No exploitable path found by the automated pass.</div>'}
 <h2>Findings ({len(shown)})</h2>
-<div class="filt">{''.join(f"<button class='{'on' if s == 'ALL' else ''}' onclick=\"ff('{s}',this)\">{s}</button>" for s in ["ALL"] + list(SEV_ORDER))}
+<div class="filt">{_sev_filter_buttons()}
 </div>
 {''.join(rows) or '<div class="muted">Nothing to report. Automated coverage is a subset of a real assessment: finish with manual access-control, business-logic and abuse-case testing.</div>'}
 </div></div>
+<h2>Scan quality</h2>
+{warn_block}
+<p class="muted">Soft-404 calibration: <b>{esc(str(cal['mode']))}</b>, learned
+status <b>{esc(str(cal['status']))}</b>, body about
+<b>{esc(str(cal['length']))}B</b> (+/-{esc(str(cal['length_tolerance']))}),
+similarity floor {esc(str(cal['similarity_min']))},
+{esc(str(cal['probes_sent']))} probe(s) sent. {esc(cal['detail'])}</p>
+<p class="muted">Authenticated session:
+<span class="{'ok' if auth.get('state') == 'verified' else 'bad'}">{esc(str(auth.get('state')))}</span>
+({esc(str(auth.get('verify_url') or 'not checked'))}). {esc(auth.get('reason') or '')}</p>
+<h2>Evidence records (not scored)</h2>
+{ev_block}
 <h2>OWASP Top 10:2025 mapping</h2>
 <table><tr><th>ID</th><th>Category</th></tr>{owasp_rows}</table>
 <div class="two">
 <div><h2>Check coverage</h2>
-<table><tr><th>Check</th><th>What it probes</th><th>Result</th></tr>{cov}</table></div>
+<table><tr><th>Check</th><th>OWASP</th><th>Severity</th><th>Result</th>
+<th>Why not, when not</th></tr>{cov}</table></div>
 <div><h2>Recon</h2><table><tr><th>Item</th><th>Value</th></tr>{recon}</table>
 <h2>Engine notes</h2><ul class="muted">{notes or '<li>none</li>'}</ul></div>
 </div>
+<h2>Never tested by design</h2>
+<p class="muted">These classes are outside an automated, non-destructive pass.
+A green run says nothing about them.</p>
+<table><tr><th>Class</th><th>Why this tool does not test it</th></tr>{never}</table>
 <h2>Method and safety rails</h2>
 <p class="muted">Scope gate: every request host must match the allowlist, or it is
 never sent. Rate limit {bot.args.rps} req/s with jitter, hard budget

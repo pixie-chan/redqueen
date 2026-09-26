@@ -5,18 +5,19 @@ the exact expected check coverage. Exit 0 = all gates pass.
 """
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
 import time
 
-ROOT = "/home/zen/projects/redteam-bot"
+ROOT = os.environ.get("RT_ROOT", "/home/zen/projects/redteam-bot")
 QA = os.path.join(ROOT, "qa")
-SCRATCH = "/home/zen/.hermes/cache/scratch"
+SCRATCH = os.environ.get("RT_SCRATCH", "/home/zen/.hermes/cache/scratch")
 BOT = os.path.join(ROOT, "redteam.py")
 HARNESS = os.path.join(QA, "qx_harness.py")
-PORT = 8931
-TLS_PORT = 8932
+PORT = int(os.environ.get("RT_PORT", "8931"))
+TLS_PORT = int(os.environ.get("RT_TLS_PORT", "8932"))
 
 WEAK_EXPECT = {
     "no-tls", "hdr-csp-missing", "hdr-nosniff", "hdr-referrer", "hdr-permissions",
@@ -30,6 +31,9 @@ WEAK_EXPECT = {
     "method-trace", "method-put", "sec-txt-missing", "robots-disclosure",
     "secret-leak", "sqli-boolean", "host-header", "graphql-introspection",
     "exp-api-docs", "exp-admin-panel",
+    # R2: the global matcher sweep fires on the weak harness (private key in
+    # a response header, python traceback in a 500 body, secrets in app.js).
+    "global-secret-sweep",
 }
 # legitimate non-fires on an http target or with these harness responses
 WEAK_NA = {

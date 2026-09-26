@@ -109,6 +109,40 @@
  "robots-disclosure": ("A02", "LOW", "robots.txt reveals sensitive paths",
    "disallowed admin/backup paths are published to everyone",
    "remove secret paths from robots.txt, block them at the server instead"),
+ "global-secret-sweep": ("A02", "HIGH", "Secret or trace signature in served content",
+   "a key or an internal trace that no single check looked for is readable by anyone",
+   "pull the value out of client-visible content, rotate it at the provider and keep it server-side; return generic error pages and store traces in private logs"),
+"desync-confirmed": ("A01", "CRITICAL",
+    "Confirmed HTTP request desync cross-contamination (CWE-444)",
+    "one client's request is answered with another client's request or "
+    "response: sessions, responses and cache entries cross over between users",
+    "end to end HTTP/2 or a single strict HTTP/1.1 parser, reject duplicate "
+    "Content-Length and Transfer-Encoding, and validate rewritten requests "
+    "against RFC 9112 before forwarding"),
+  "desync-cells": ("A06", "INFO", "Length-interpretation cell (CL/TE/0/H2) probe",
+    "an anomaly, not a vulnerability: one hop read a different message length "
+    "than another hop did",
+    "read the anomaly table and confirm by hand before changing anything; a "
+    "differential here is a lead, not a bug"),
+  "unicode-oracle": ("A07", "INFO",
+    "Unicode normalization oracle in a reflected value",
+    "an anomaly, not a vulnerability: the stored or echoed form of a value "
+    "differs from the form sent, which can break an identity comparison",
+    "normalize with NFKC on input and on the stored value, compare code-point "
+    "sequences rather than rendered strings, reject mixed-form input at the edge"),
+  "delimiter-confusion": ("A02", "INFO",
+    "Path delimiter handled differently by cache and origin",
+    "an anomaly, not a vulnerability: two hops disagree about what the path "
+    "is, which is the precondition for cache poisoning",
+    "normalize the path once at the edge, cache only on the normalized key, "
+    "reject unencoded ; . and %2e upstream"),
+  "api-state-authz": ("A01", "INFO",
+    "Authorization differential on a documented object path",
+    "an anomaly, not a vulnerability: an unauthenticated read of a single "
+    "object differs from the anonymous collection baseline",
+    "authenticate then authorize per object server-side; add a second "
+    "owner-provided test account to the plan and re-run before concluding "
+    "anything about BOLA"),
 }
 
 GROUPS = {
@@ -132,6 +166,7 @@ GROUPS = {
    "host-header", "subdomain-dangling"],
  "client": ["sri-missing", "mixed-content"],
  "methods": ["method-trace", "method-put"],
+ "sweep": ["global-secret-sweep"],
 }
 SCENARIOS = {
  "recon": ["recon"],
@@ -139,7 +174,16 @@ SCENARIOS = {
  "misconfig": ["exposures", "methods"],
  "injection": ["injection"],
  "auth": ["auth", "jwt"],
+ # the whole-corpus sweep runs after exposures, so it sees the files the
+ # exposure probes captured and not only the crawl
  "full": ["recon", "tls", "headers", "cors", "cookies", "jwt", "secrets",
-   "exposures", "injection", "auth", "client", "methods"],
+   "exposures", "sweep", "injection", "auth", "client", "methods"],
+ "anomaly": ["anomaly"],
+ "tierc": ["tierc"],
+"tierb": ["desync-confirmed", "desync-cells", "unicode-oracle",
+   "delimiter-confusion", "api-state-authz"],
  "api": ["recon", "exposures", "cors", "injection"],
+# the API state walk reads the OpenAPI document that exp-api-docs captured,
+# so the exposures group has to run first inside the tierb scenario
+"tierb": ["exposures", "tierb"],
 }

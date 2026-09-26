@@ -2,7 +2,7 @@
 """qx_harness.py: intentionally vulnerable local target for QA of redteam.py.
 Modes: weak (default) | strong (hardened). NEVER run this exposed to a network.
 """
-import hmac, hashlib, base64, json, os, re, sys, time
+import hmac, hashlib, base64, json, os, re, sys, time, unicodedata
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit, parse_qs, unquote
 
@@ -35,7 +35,8 @@ def html(title, body, extra_scripts=""):
 INDEX_BODY = """
 <nav><a href='/login'>Login</a> <a href='/assets/'>Assets</a>
 <a href='/search?q=hello'>Search</a> <a href='/redirect?to=/home'>Home</a>
-<a href='/download?file=readme.txt'>Download</a></nav>
+<a href='/download?file=readme.txt'>Download</a>
+<a href='/unicode?q=hello'>Unicode</a> <a href='/echo-path'>Echo</a></nav>
 <form method='post' action='/transfer'>
 <input name='account'><input name='amount'>
 <button>Send</button></form>
@@ -46,6 +47,40 @@ INDEX_BODY = """
 <script src='https://cdn.example.org/lib.js'></script>
 <script src='/assets/app.js'></script>
 <script>//# sourceMappingURL=/assets/app.js.map</script>"""
+
+# Tier B: a real OpenAPI 3 document with {param} path templates, so the
+# API state walk has something to walk. The orders item declares an
+# integer (so the walker synthesizes "0") and also a delete operation the
+# walker must never send; the users item declares a string (so the walker
+# synthesizes its own canary) and a post operation the walker may only
+# send when --allow-spec-post is given.
+OPENAPI_DOC = {
+    "openapi": "3.0.0",
+    "info": {"title": "placeholder_website api", "version": "1.0.0"},
+    "paths": {
+        "/api/v1/orders/{orderId}": {
+            "get": {"operationId": "getOrder",
+                    "parameters": [{"name": "orderId", "in": "path",
+                                    "required": True,
+                                    "schema": {"type": "integer"}}]},
+            "delete": {"operationId": "deleteOrder",
+                       "parameters": [{"name": "orderId", "in": "path",
+                                       "required": True,
+                                       "schema": {"type": "integer"}}]},
+        },
+        "/api/v1/users/{userId}": {
+            "get": {"operationId": "getUser",
+                    "parameters": [{"name": "userId", "in": "path",
+                                    "required": True,
+                                    "schema": {"type": "string"}}]},
+            "post": {"operationId": "createUser",
+                     "requestBody": {"content": {"application/json": {
+                         "schema": {"type": "object", "properties": {
+                             "email": {"type": "string"}}}}}},
+                     "responses": {"201": {"description": "created"}}},
+        },
+    },
+}
 
 STRONG_INDEX = INDEX_BODY.replace(
     "action='/transfer'>",
@@ -87,6 +122,11 @@ STRONG_HEADERS = {
 
 class H(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
+    # Tier B: the method log lets a QA gate prove no mutating verb was ever
+    # sent, and the stash backs the deliberately broken desync echo handler.
+    # Declared on the class, so they exist before the first request arrives.
+    methods = []
+    stash = b""
 
     def log_message(self, *a):
         pass
@@ -126,12 +166,159 @@ class H(BaseHTTPRequestHandler):
         else:
             self.raw(html("Not found", "<p>404</p>"), status=404)
 
+    def parse_request(self):
+        """Log every method the harness actually receives, so a QA gate can
+        prove no mutating verb was ever sent rather than trusting the
+        bot's own report."""
+        ok = BaseHTTPRequestHandler.parse_request(self)
+        if ok:
+            H.methods.append(self.command)
+        return ok
 
-    # ---------- GET ----------
+
+    def _read_bounded(self, n, seconds=1.5):
+        """Read at most n bytes, giving up quickly instead of blocking.
+
+        The Tier B desync cell "0" announces a Content-Length and then
+        sends nothing, which is the whole point of that cell: a handler
+        that trusts the header waits for bytes that never arrive. A real
+        broken proxy hangs here; the harness gives up so QA stays fast.
+        """
+        old = self.connection.gettimeout()
+        try:
+            self.connection.settimeout(seconds)
+            return self.rfile.read(n)
+        except OSError:
+            return b""
+        finally:
+            try:
+                self.connection.settimeout(old)
+            except OSError:
+                pass
+
+    def _read_body(self):
+        """Whatever framing headers claim, read at most one message body."""
+        length = int(self.headers.get("Content-Length", 0) or 0)
+        if length > 0:
+            return self._read_bounded(length)
+        if "chunked" in (self.headers.get("Transfer-Encoding") or "").lower():
+            size_line = self._read_bounded(65536).split(b";")[0].strip()
+            try:
+                size = int(size_line, 16)
+            except ValueError:
+                return b""
+            if size <= 0:
+                return b""
+            body = self._read_bounded(size)
+            self._read_bounded(2)          # trailing CRLF after the chunk
+            self._read_bounded(2)          # and the 0-length terminator
+            return body
+        return b""
+
+    def desync_echo(self):
+        """DELIBERATELY BROKEN handler for the Tier B desync gate.
+
+        It keeps whatever body the previous request on this connection
+        carried and hands it back on the next request, which is what a
+        front-end and back-end that disagree about message length look
+        like from the outside. The canary planted by the setup request
+        therefore comes back in the follow-up response.
+        """
+        body = self._read_body()
+        if body:
+            H.stash = body
+        shown = H.stash.decode("utf-8", "replace") if H.stash else "(empty)"
+        self.raw(html("Desync echo", f"<p>previous body: {shown}</p>"))
     def do_GET(self):
         parts = urlsplit(self.path)
         path = unquote(parts.path)
         q = parse_qs(parts.query, keep_blank_values=True)
+
+        if MODE == "empty":
+            # every route is the same not-found page: nothing to crawl, so
+            # the scan-quality warnings must fire. First branch on purpose.
+            self.raw("<html><head><title>Not found</title></head>"
+                     "<body><h1>404</h1></body></html>", status=404)
+            return
+
+        # ---------- Tier B surfaces ----------
+
+        # deliberately broken: returns the previous request's body marker
+        if path == "/desync-echo":
+            self.desync_echo()
+            return
+
+        # what the server actually received, for the Tier B method gate
+        if path == "/qx-method-log":
+            self.raw(json.dumps(H.methods), ctype="application/json")
+            return
+        if path == "/qx-method-log/reset":
+            H.methods.clear()
+            self.raw(json.dumps({"reset": True}), ctype="application/json")
+            return
+
+        # Tier B: the same status, materially different bytes depending on
+        # how the raw target is read. This is the cache-versus-origin
+        # disagreement the delimiter check exists to catch, so the fixture
+        # serves genuinely different documents. Near-identical bodies would
+        # be a correct true negative: the check ignores differences under
+        # its 0.15 distance threshold on purpose.
+        if path.startswith("/echo-path"):
+            raw = self.path
+            if ";" in raw:
+                self.raw(".echo{color:#39d98a;margin:0;padding:0}\n" * 12,
+                         ctype="text/css")
+            elif raw.endswith("."):
+                self.raw("const echoPath = function (t) { return t; };\n" * 6,
+                         ctype="application/javascript")
+            elif "%2e" in raw:
+                self.raw(json.dumps({"route": "encoded-dot", "raw": raw,
+                                     "assets": ["a.css", "b.js", "c.png"]}),
+                         ctype="application/json")
+            else:
+                # "?" and "#" land here on purpose: a server that treats
+                # /echo-path? and /echo-path# as /echo-path is correct, and
+                # the check must stay quiet when it does
+                self.raw(html("Echo path", f"<p>raw path: {raw}</p>"))
+            return
+
+        # normalization oracle: NFKC-folds what it reflects (weak), or
+        # escapes it faithfully (strong)
+        if path == "/unicode":
+            val = q.get("q", [""])[0]
+            if MODE == "weak":
+                self.raw(html("Unicode",
+                              "<p>normalized: "
+                              + unicodedata.normalize("NFKC", val) + "</p>"))
+            else:
+                import html as hl
+                self.raw(html("Unicode", f"<p>value: {hl.escape(val)}</p>"))
+            return
+
+        # documented object paths: the weak build hands out an object to
+        # anyone, the strong build demands authentication
+        if re.match(r"^/api/v1/(orders|users)/[^/]+$", path):
+            if MODE == "weak":
+                self.raw(json.dumps({"id": path.rsplit("/", 1)[-1],
+                                     "owner": "qa-user",
+                                     "email": "qa@example.test",
+                                     "status": "active"}),
+                         ctype="application/json")
+            else:
+                self.raw(json.dumps({"error": "unauthorized"}), status=401,
+                         ctype="application/json")
+            return
+        if path in ("/api/v1/orders", "/api/v1/users"):
+            if MODE == "weak":
+                self.raw(json.dumps({"items": [], "count": 0}),
+                         ctype="application/json")
+            else:
+                self.raw(json.dumps({"error": "unauthorized"}), status=401,
+                         ctype="application/json")
+            return
+
+
+    # ---------- GET ----------
 
         # reflection + injection playground
         if path == "/search":
@@ -293,11 +480,8 @@ class H(BaseHTTPRequestHandler):
                           + "<div>" * 40 + "</div>"))
             return
 
-        if path == "/openapi.json":
-            if MODE == "weak":
-                self.raw('{"openapi":"3.0.0","info":{"title":"placeholder_website api"}}',
-                         ctype="application/json")
-                return
+        # the real OpenAPI document with {param} templates is served by the
+        # OPENAPI_DOC branch further down
             self._notfound()
             return
 
@@ -305,6 +489,13 @@ class H(BaseHTTPRequestHandler):
             if MODE == "weak":
                 self.raw(html("phpMyAdmin", "<h1>phpMyAdmin</h1>"
                               "<form>Login to MySQL</form>"))
+                return
+            self._notfound()
+            return
+
+        if path == "/openapi.json":
+            if MODE == "weak":
+                self.raw(json.dumps(OPENAPI_DOC), ctype="application/json")
                 return
             self._notfound()
             return
@@ -335,7 +526,6 @@ class H(BaseHTTPRequestHandler):
             return
 
         self._notfound()
-
 
     # ---------- other methods ----------
     def do_POST(self):
@@ -376,6 +566,10 @@ class H(BaseHTTPRequestHandler):
 
 
 H.hits = 0
+# Tier B: the method log lets a QA gate prove no mutating verb was ever sent,
+# and the stash backs the deliberately broken desync echo handler.
+H.methods = []
+H.stash = b""
 
 
 def main():

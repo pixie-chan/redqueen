@@ -65,20 +65,58 @@ class Bot:
         self.params = {}          # url -> [param names]
         self.stopped = None
         self.canary = "QX" + secrets.token_hex(5)
-        self._soft404 = None
         self.js_assets = {}
         self.endpoints = set()
         self.script_urls = set()
         self._seen = set()
+        # R2: soft-404 profile, scan-quality warnings, degraded checks,
+        # authenticated-session verdict, and the passive replay switch.
+        # Every new flag is read with getattr so a Namespace built by an
+        # older caller (unit_sources.py) still works unchanged.
+        self.calibration = Calibration(self)
+        self.warnings = []
+        # Tier A + C state. Declared here so a scenario that runs either
+        # engine finds the attributes, and so a degraded engine leaves an
+        # empty list behind instead of raising AttributeError.
+        # Tier A/B anomalies. Interesting, needs human review, never a
+        # finding: they stay out of counts(), the score, the checklist and
+        # the exit code. Shared sink, only `tier` differs.
+        self.anomalies = []
+        self._anomaly_keys = set()
+        self.anomaly_routes = []
+        self.anomaly_requests = 0
+        self.api_docs = {}            # url -> openapi/swagger text found
+        self.tierb = {"desync_requests": 0, "unicode_requests": 0,
+                      "delimiter_requests": 0, "api_state_requests": 0,
+                      "methods": [], "api_spec_source": ""}
+        self.tierc = []
+        self.degraded = []
+        self.status_counts = {}
+        self.responses_seen = 0
+        self.auth_state = {"state": "not-checked", "reason": "",
+                           "verify_url": "", "marker": ""}
+        self.replay = False
+        self.replay_map = {}
+        self.replay_base = None
+        self.replayed = False
 
     # ---------- plumbing ----------
     def get(self, url, headers=None, method="GET", body=None, follow=True):
+        if self.replay:
+            # passive replay: answer from stored responses only, never the
+            # network. bot.t.used must stay exactly 0 for the whole run.
+            r = self.replay_map.get(url)
+            if r is None:
+                self.note(f"replay: no stored response for {url}")
+                return None
+            self._track(r)
+            return r
         hdrs = dict(headers or {})
         if self.args.cookie and "Cookie" not in hdrs:
             hdrs["Cookie"] = self.args.cookie
         try:
-            return self.t.request(method, url, headers=hdrs, body=body,
-                                  follow=follow)
+            r = self.t.request(method, url, headers=hdrs, body=body,
+                               follow=follow)
         except BudgetExceeded as e:
             self.stopped = str(e)
             raise
@@ -88,13 +126,70 @@ class Bot:
         except RuntimeError as e:
             self.notes.append(f"request error {url}: {e}")
             return None
+        self._track(r)
+        return r
+
+    def _track(self, resp):
+        if resp is None:
+            return
+        self.responses_seen += 1
+        self.status_counts[resp.status] = self.status_counts.get(resp.status, 0) + 1
+
+    ANOMALY_DISCLAIMER = ("INTERESTING, NOT A VULNERABILITY: needs human review")
+
+    def add_anomaly(self, check_id, route="", probe_class="", note="",
+                    confidence="low", tier="B", detail="", evidence="",
+                    distance=None, status_delta=None, headers_added=None,
+                    headers_removed=None, canary_reflected=False,
+                    param=None):
+        """Record an anomaly. Anomalies are never findings: they never
+        enter counts(), the score, the checklist or the exit code, and
+        they are never re-verified. Tier A and Tier B share this sink and
+        differ only in the `tier` field, so one report section serves
+        both. Every record carries the disclaimer sentence verbatim."""
+        key = (check_id, route.split("?")[0], probe_class, param or "")
+        if key in self._anomaly_keys:
+            return None
+        self._anomaly_keys.add(key)
+        ev = SECRET_RE.sub(lambda m: m.group(1) + "=***REDACTED***",
+                           evidence or "")[:600]
+        a = {"id": f"A{len(self.anomalies) + 1:03d}", "check_id": check_id,
+             "tier": tier, "route": route, "param": param,
+             "probe_class": probe_class, "confidence": confidence,
+             "distance": distance, "status_delta": status_delta,
+             "headers_added": sorted(headers_added or []),
+             "headers_removed": sorted(headers_removed or []),
+             "canary_reflected": bool(canary_reflected),
+             "note": note, "detail": detail, "evidence": ev,
+             "title": (CHECKS.get(check_id) or ("", "", "", "", ""))[2],
+             "disclaimer": self.ANOMALY_DISCLAIMER}
+        self.anomalies.append(a)
+        return a
 
     def note(self, msg):
         if msg not in self.notes:
             self.notes.append(msg)
 
+    def warn(self, code, message):
+        """Scan-quality warning. One entry per code, always recorded."""
+        if any(w["code"] == code for w in self.warnings):
+            return
+        self.warnings.append({"code": code, "message": message})
+
+    def degrade(self, who, why):
+        self.degraded.append(f"{who}: {why}")
+
     def add(self, check_id, url="", param=None, severity=None, evidence="",
-            fix=None, confidence="high", detail=None, verify=None):
+            fix=None, confidence="high", detail=None, verify=None,
+            internal=False, negative=False):
+        """Record a finding.
+
+        internal=True  evidence only: stored and reported, but never counted
+                       in counts(), the score, checks_fired or the exit code.
+        negative=True  the signal is the ABSENCE of something. Scored and
+                       counted exactly like a positive finding; the flag only
+                       documents that the matcher fires on a missing control.
+        """
         spec = CHECKS.get(check_id)
         if spec is None:
             raise KeyError(check_id)
@@ -111,14 +206,28 @@ class Bot:
              "confidence": confidence, "verified": False, "url": url,
              "param": param, "evidence": ev, "fix": fix or dfix,
              "impact": impact, "detail": detail or "",
+             "internal": bool(internal), "negative": bool(negative),
+             "used_cookie": bool(getattr(self.args, "cookie", None)),
              "refs": [OWASP_URL.get(owasp, CHEATSHEET + "Reporting_Cheat_Sheet.html")]}
         self.findings.append(f)
         if verify is not None:
             self._verify[f["id"]] = verify
         return f
 
+    def scored(self):
+        """Findings that count: internal evidence records do not."""
+        return [f for f in self.findings if not f.get("internal")]
+
+    def evidence_records(self):
+        return [f for f in self.findings if f.get("internal")]
+
+    def fired_check_ids(self):
+        return {f["check_id"] for f in self.scored()}
+
     def verify_findings(self):
         for f in list(self.findings):
+            if f.get("internal"):
+                continue
             if f["severity"] not in ("CRITICAL", "HIGH"):
                 continue
             fn = self._verify.get(f["id"])
@@ -140,7 +249,7 @@ class Bot:
 
     def score(self):
         total = 100.0
-        for f in self.findings:
+        for f in self.scored():
             w = {"CRITICAL": 25, "HIGH": 12, "MEDIUM": 5, "LOW": 2,
                  "INFO": 0}[f["severity"]]
             if not f["verified"] and f["severity"] in ("CRITICAL", "HIGH"):
@@ -150,9 +259,120 @@ class Bot:
 
     def counts(self):
         c = {k: 0 for k in SEV_ORDER}
-        for f in self.findings:
+        for f in self.scored():
             c[f["severity"]] += 1
         return c
+
+    # ---------- R2: quality, auth, passive replay ----------
+    def soft404_audit(self):
+        """(soft404-shaped, genuinely live) counts over the captured pages."""
+        soft = live = 0
+        for r in self.pages.values():
+            if self.calibration.is_not_found(r):
+                soft += 1
+            elif r.status < 400:
+                live += 1
+        return soft, live
+
+    def verify_auth(self):
+        """M14: one cheap fetch of the verify URL decides whether the cookie
+        the operator passed is actually authenticated. Runs after discovery,
+        so the first cookie-bearing request has already happened. Without
+        --cookie nothing is fetched: there is no session to verify."""
+        url = getattr(self.args, "auth_verify_url", None) or (
+            self.t.base + self.t.path)
+        marker = getattr(self.args, "auth_marker", None) or ""
+        cookie = getattr(self.args, "cookie", None)
+        if not cookie:
+            self.auth_state = {
+                "state": "unverified", "verify_url": url, "marker": marker,
+                "reason": "no --cookie supplied, so every request in this run "
+                          "was anonymous and nothing proves a session"}
+            self.recon.append(("auth", "unverified (no --cookie)"))
+            return self.auth_state
+        r = self.get(url)
+        if r is None:
+            reason = f"verify url {url} could not be fetched"
+        elif LOGIN_RE.search(r.text[:20000]):
+            reason = (f"{url} still serves a login or signin form, so the "
+                      f"supplied cookie does not authenticate")
+        else:
+            marker_ok = bool(marker) and marker in r.text
+            echo = [c.split(";", 1)[0].split("=", 1)[0].strip()
+                    for c in (r.headers.get("set-cookie-list") or [])]
+            echo = [c for c in echo if re.search(
+                r"(session|sess|sid|token|auth|jwt|phpsess|jsession|connect\.sid)",
+                c, re.I)]
+            if marker_ok or echo:
+                how = ("--auth-marker present" if marker_ok
+                       else "session cookie echoed: " + ", ".join(echo))
+                self.auth_state = {
+                    "state": "verified", "verify_url": url, "marker": marker,
+                    "reason": f"{url} returned HTTP {r.status} with no login "
+                              f"form and {how}"}
+                self.recon.append(("auth", f"verified ({how})"))
+                return self.auth_state
+            reason = (f"{url} returned HTTP {r.status} with no login form, but "
+                      f"neither the --auth-marker nor a session cookie echo "
+                      f"was observed")
+        self.auth_state = {"state": "unverified", "verify_url": url,
+                           "marker": marker, "reason": reason}
+        self.recon.append(("auth", f"unverified ({reason[:100]})"))
+        return self.auth_state
+
+    def downgrade_cookie_confidence(self):
+        """An unverified session means every finding collected with that
+        cookie may just be the anonymous view of the page."""
+        if not (getattr(self.args, "cookie", None)
+                and self.auth_state.get("state") == "unverified"):
+            return 0
+        n = 0
+        for f in self.findings:
+            if f.get("used_cookie") and f.get("confidence") == "high":
+                f["confidence"] = "medium"
+                n += 1
+        if n:
+            self.note(f"{n} findings downgraded to medium confidence: the "
+                      f"supplied cookie could not be verified as authenticated")
+        return n
+
+    # ---------- R2: passive replay ----------
+    def load_passive_files(self, paths):
+        """Read saved HTML into synthetic responses. No request is made."""
+        added = []
+        for path in paths or []:
+            try:
+                with open(path, "rb") as fh:
+                    data = fh.read(2_000_000)
+            except OSError as e:
+                self.note(f"passive file unreadable: {path} ({e})")
+                continue
+            head = data[:600].decode("utf-8", "replace").lower()
+            ctype = ("text/html; charset=utf-8"
+                     if "<html" in head or "<!doctype" in head
+                     else "text/plain; charset=utf-8")
+            url = "file://" + os.path.abspath(path)
+            self.pages[url] = Resp(200, {
+                "content-type": ctype,
+                "content-length": str(len(data)),
+                "x-qx-passive-file": os.path.abspath(path)},
+                data, url, [], 0.0)
+            added.append(url)
+        if added:
+            self.recon.append(("passive files", f"{len(added)} loaded from disk"))
+            self.note(f"passive replay: {len(added)} stored response(s), "
+                      f"0 requests sent")
+        return added
+
+    def enter_replay(self):
+        self.replay_map = dict(self.pages)
+        self.replay = True
+        self.replayed = True
+
+    def exit_replay(self):
+        self.replay = False
+        self.replay_map = {}
+        self.replay_base = None
 
     # ---------- discovery ----------
     def fetch(self, url):
@@ -165,6 +385,13 @@ class Bot:
         base = self.t.base + self.t.path
         r = self.fetch(base)
         if r is None:
+            # Tier C is documentation-only and must work with no reachable
+            # target at all; every other scenario needs the seed page.
+            if getattr(self.args, "scenario", "") == "tierc" or \
+                    getattr(self.args, "tierc_candidates", None):
+                self.note("tier C: target unreachable, continuing with "
+                          "documentation only (sends nothing)")
+                return
             raise SystemExit("target unreachable or out of scope")
         self.recon.append(("target", base))
         self.recon.append(("status", str(r.status)))
@@ -224,6 +451,9 @@ class Bot:
             self._ct_log()
         else:
             self.recon.append(("ct-log", "off (add --ct-log)"))
+        # learn the not-found profile once the crawl is done, so every later
+        # check (exposures, sweep, scan-quality) shares one verdict
+        self.calibration.learn()
 
     def _crawl(self):
         queue = [u for u in sorted(self.urls)]

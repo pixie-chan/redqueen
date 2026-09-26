@@ -1,9 +1,93 @@
-
-    # ---------- GET ----------
     def do_GET(self):
         parts = urlsplit(self.path)
         path = unquote(parts.path)
         q = parse_qs(parts.query, keep_blank_values=True)
+
+        if MODE == "empty":
+            # every route is the same not-found page: nothing to crawl, so
+            # the scan-quality warnings must fire. First branch on purpose.
+            self.raw("<html><head><title>Not found</title></head>"
+                     "<body><h1>404</h1></body></html>", status=404)
+            return
+
+        # ---------- Tier B surfaces ----------
+
+        # deliberately broken: returns the previous request's body marker
+        if path == "/desync-echo":
+            self.desync_echo()
+            return
+
+        # what the server actually received, for the Tier B method gate
+        if path == "/qx-method-log":
+            self.raw(json.dumps(H.methods), ctype="application/json")
+            return
+        if path == "/qx-method-log/reset":
+            H.methods.clear()
+            self.raw(json.dumps({"reset": True}), ctype="application/json")
+            return
+
+        # Tier B: the same status, materially different bytes depending on
+        # how the raw target is read. This is the cache-versus-origin
+        # disagreement the delimiter check exists to catch, so the fixture
+        # serves genuinely different documents. Near-identical bodies would
+        # be a correct true negative: the check ignores differences under
+        # its 0.15 distance threshold on purpose.
+        if path.startswith("/echo-path"):
+            raw = self.path
+            if ";" in raw:
+                self.raw(".echo{color:#39d98a;margin:0;padding:0}\n" * 12,
+                         ctype="text/css")
+            elif raw.endswith("."):
+                self.raw("const echoPath = function (t) { return t; };\n" * 6,
+                         ctype="application/javascript")
+            elif "%2e" in raw:
+                self.raw(json.dumps({"route": "encoded-dot", "raw": raw,
+                                     "assets": ["a.css", "b.js", "c.png"]}),
+                         ctype="application/json")
+            else:
+                # "?" and "#" land here on purpose: a server that treats
+                # /echo-path? and /echo-path# as /echo-path is correct, and
+                # the check must stay quiet when it does
+                self.raw(html("Echo path", f"<p>raw path: {raw}</p>"))
+            return
+
+        # normalization oracle: NFKC-folds what it reflects (weak), or
+        # escapes it faithfully (strong)
+        if path == "/unicode":
+            val = q.get("q", [""])[0]
+            if MODE == "weak":
+                self.raw(html("Unicode",
+                              "<p>normalized: "
+                              + unicodedata.normalize("NFKC", val) + "</p>"))
+            else:
+                import html as hl
+                self.raw(html("Unicode", f"<p>value: {hl.escape(val)}</p>"))
+            return
+
+        # documented object paths: the weak build hands out an object to
+        # anyone, the strong build demands authentication
+        if re.match(r"^/api/v1/(orders|users)/[^/]+$", path):
+            if MODE == "weak":
+                self.raw(json.dumps({"id": path.rsplit("/", 1)[-1],
+                                     "owner": "qa-user",
+                                     "email": "qa@example.test",
+                                     "status": "active"}),
+                         ctype="application/json")
+            else:
+                self.raw(json.dumps({"error": "unauthorized"}), status=401,
+                         ctype="application/json")
+            return
+        if path in ("/api/v1/orders", "/api/v1/users"):
+            if MODE == "weak":
+                self.raw(json.dumps({"items": [], "count": 0}),
+                         ctype="application/json")
+            else:
+                self.raw(json.dumps({"error": "unauthorized"}), status=401,
+                         ctype="application/json")
+            return
+
+
+    # ---------- GET ----------
 
         # reflection + injection playground
         if path == "/search":
@@ -165,11 +249,8 @@
                           + "<div>" * 40 + "</div>"))
             return
 
-        if path == "/openapi.json":
-            if MODE == "weak":
-                self.raw('{"openapi":"3.0.0","info":{"title":"placeholder_website api"}}',
-                         ctype="application/json")
-                return
+        # the real OpenAPI document with {param} templates is served by the
+        # OPENAPI_DOC branch further down
             self._notfound()
             return
 
@@ -177,6 +258,13 @@
             if MODE == "weak":
                 self.raw(html("phpMyAdmin", "<h1>phpMyAdmin</h1>"
                               "<form>Login to MySQL</form>"))
+                return
+            self._notfound()
+            return
+
+        if path == "/openapi.json":
+            if MODE == "weak":
+                self.raw(json.dumps(OPENAPI_DOC), ctype="application/json")
                 return
             self._notfound()
             return

@@ -10,6 +10,9 @@ def title_of(body):
 
 
 def base_page(bot):
+    # a passive replay points base_page at the stored response being judged
+    if getattr(bot, "replay_base", None):
+        return bot.replay_base
     return bot.t.base + bot.t.path
 
 
@@ -25,7 +28,8 @@ def check_headers(bot):
         return rr is not None
     if bot.t.scheme == "https":
         if "strict-transport-security" not in h:
-            bot.add("hdr-hsts", url=url, evidence="header absent", verify=vfy)
+            bot.add("hdr-hsts", url=url, evidence="header absent", verify=vfy,
+                    negative=True)
         else:
             m = re.search(r"max-age=(\d+)", h["strict-transport-security"])
             if m and int(m.group(1)) < 86400:
@@ -35,28 +39,32 @@ def check_headers(bot):
     if is_html:
         csp = h.get("content-security-policy", "")
         if not csp:
-            bot.add("hdr-csp-missing", url=url, evidence="header absent", verify=vfy)
+            bot.add("hdr-csp-missing", url=url, evidence="header absent",
+                    verify=vfy, negative=True)
         elif re.search(r"script-src[^;]*'unsafe-inline'", csp) or \
                 re.search(r"default-src[^;]*'unsafe-inline'", csp) or \
                 re.search(r"'unsafe-eval'", csp):
             bot.add("hdr-csp-unsafe", url=url, evidence=csp[:300], verify=vfy)
         if "x-frame-options" not in h and "frame-ancestors" not in csp:
             bot.add("clickjack", url=url, evidence="no XFO and no frame-ancestors",
-                    verify=vfy)
+                    verify=vfy, negative=True)
         if "referrer-policy" not in h:
-            bot.add("hdr-referrer", url=url, evidence="header absent")
+            bot.add("hdr-referrer", url=url, evidence="header absent",
+                    negative=True)
         if "permissions-policy" not in h:
-            bot.add("hdr-permissions", url=url, evidence="header absent")
+            bot.add("hdr-permissions", url=url, evidence="header absent",
+                    negative=True)
         if "cross-origin-opener-policy" not in h:
-            bot.add("hdr-coop", url=url, evidence="header absent")
+            bot.add("hdr-coop", url=url, evidence="header absent", negative=True)
         if "cross-origin-resource-policy" not in h:
-            bot.add("hdr-corp", url=url, evidence="header absent")
+            bot.add("hdr-corp", url=url, evidence="header absent", negative=True)
         if "x-content-type-options" not in h:
-            bot.add("hdr-nosniff", url=url, evidence="header absent", verify=vfy)
+            bot.add("hdr-nosniff", url=url, evidence="header absent",
+                    verify=vfy, negative=True)
     for purl, pr in list(bot.pages.items())[:12]:
         if re.search(r"(login|signin|account|dashboard|admin|settings|profile|checkout)",
                      purl, re.I) and "cache-control" not in pr.headers:
-            bot.add("hdr-cache-sensitive", url=purl,
+            bot.add("hdr-cache-sensitive", url=purl, negative=True,
                     evidence="no Cache-Control on a sensitive page")
             break
     xss = h.get("x-xss-protection", "")
@@ -218,6 +226,7 @@ def check_jwt(bot):
                     break
         if "exp" not in pay:
             bot.add("jwt-no-exp", url=base_page(bot), param="jwt",
+                    negative=True,
                     evidence=f"claims present: {', '.join(sorted(pay)[:8])}")
         else:
             try:

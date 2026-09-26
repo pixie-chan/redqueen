@@ -83,6 +83,7 @@ class Transport:
         self.rate_limited = 0
         self.notes = []
         self.lock = threading.Lock()
+        self.frozen = False
         if not local:
             try:
                 ipaddress.ip_address(self.host)
@@ -116,6 +117,11 @@ class Transport:
         return http.client.HTTPConnection(host, port, timeout=self.timeout)
 
     def _budget(self):
+        # A frozen transport is the Tier C guarantee: once the dossier phase
+        # starts, no code path can put bytes on the wire. Checked here, the
+        # single choke point every request passes through.
+        if getattr(self, "frozen", False):
+            raise OutOfScope("transport is frozen (tierc research phase)")
         with self.lock:
             if self.used >= self.max_requests:
                 raise BudgetExceeded(
@@ -224,3 +230,158 @@ class Transport:
                 continue
             return resp
         return resp
+
+    def _read_exact(self, fh, n):
+        out = b""
+        while len(out) < n:
+            chunk = fh.read(n - len(out))
+            if not chunk:
+                break
+            out += chunk
+        return out
+
+    def _read_raw_response(self, fh, sock):
+        line = fh.readline(65536)
+        if not line:
+            return None
+        parts = line.decode("iso-8859-1", "replace").rstrip("\r\n").split(" ", 2)
+        if len(parts) < 2 or not parts[1].isdigit():
+            return None
+        status, reason = int(parts[1]), (parts[2] if len(parts) > 2 else "")
+        headers = {}
+        while True:
+            hl = fh.readline(65536)
+            if not hl or hl in (b"\r\n", b"\n"):
+                break
+            k, _sep, v = hl.decode("iso-8859-1", "replace").partition(":")
+            kl, v = k.strip().lower(), v.strip()
+            if not kl:
+                continue
+            # a repeated header is joined, which is exactly how a
+            # duplicated Content-Length shows up as an ambiguity
+            headers[kl] = headers[kl] + ", " + v if kl in headers else v
+        body = b""
+        if "chunked" in headers.get("transfer-encoding", "").lower():
+            chunks, size = [], 0
+            for _ in range(32):            # bounded: never a chunked flood
+                sz = fh.readline(65536).strip()
+                if not sz:
+                    break
+                try:
+                    size = int(sz.split(b";")[0], 16)
+                except ValueError:
+                    break
+                if size <= 0:
+                    fh.readline(65536)      # trailing CRLF, trailers dropped
+                    break
+                chunks.append(self._read_exact(fh, size))
+                fh.readline(65536)
+            body = b"".join(chunks)
+        elif "content-length" in headers:
+            first = headers["content-length"].split(",")[0].strip()
+            if first.isdigit():
+                body = self._read_exact(fh, min(int(first), 2_000_000))
+        else:
+            # no framing header: take what arrives, but never block on a
+            # response that stays open
+            try:
+                sock.settimeout(0.5)
+                for _ in range(32):
+                    chunk = fh.read(8192)
+                    if not chunk:
+                        break
+                    body += chunk
+            except OSError:
+                pass
+            finally:
+                sock.settimeout(self.timeout)
+        return RawResp(status, headers, body, reason)
+
+    def raw_exchange(self, url, messages, timeout=None):
+        """Send pre-serialized HTTP/1.1 messages over ONE keep-alive
+        connection and return the responses in order.
+
+        Only the Tier B desync and delimiter probes use this. They need
+        the exact octets on the wire: http.client computes its own
+        framing and drops a duplicate Content-Length, which is precisely
+        the disagreement under test. Both messages are written before
+        either response is read, because a desync is only a desync if the
+        follow-up is already on the wire. Scope-gated and budgeted like
+        request(), one budget tick per message, never retried.
+        """
+        if not self.in_scope(url):
+            raise OutOfScope(url)
+        p = urllib.parse.urlsplit(url)
+        conn = self._conn(p.scheme, p.hostname,
+                          p.port or (443 if p.scheme == "https" else 80))
+        conn.timeout = timeout or self.timeout
+        out, fh = [], None
+        try:
+            sock = None
+            for msg in messages:
+                self._budget()          # may raise BudgetExceeded
+                if sock is None:
+                    conn.connect()
+                    sock = conn.sock
+                    sock.settimeout(timeout or self.timeout)
+                    fh = sock.makefile("rb")
+                sock.sendall(msg)
+            if sock is not None:
+                for _ in messages:
+                    resp = self._read_raw_response(fh, sock)
+                    if resp is None:
+                        break
+                    resp.url = url
+                    out.append(resp)
+        except (OSError, http.client.HTTPException) as e:
+            if not out:                 # partial reads are still data
+                raise RuntimeError(f"{type(e).__name__}: {e}")
+        finally:
+            if fh is not None:
+                try:
+                    fh.close()
+                except Exception:
+                    pass
+            try:
+                conn.close()
+            except Exception:
+                pass
+        return out
+
+
+class RawResp:
+    """A response parsed straight off the socket by Transport.raw_exchange.
+
+    Deliberately not an http.client response: the Tier B probes need the
+    bytes the server actually sent, including a duplicated Content-Length,
+    which http.client either refuses to hand back or normalizes away
+    before we could compare it. Same field names as Resp so the tierb
+    modules can treat both alike."""
+
+    def __init__(self, status, headers, body, reason=""):
+        self.status = status
+        self.headers = headers          # lowercased, repeats joined with ", "
+        self.body = body                # bytes
+        self.reason = reason
+        self.url = ""
+        self.redirects = []
+        self.elapsed = 0.0
+
+    @property
+    def text(self):
+        try:
+            return self.body.decode("utf-8", "replace")
+        except Exception:
+            return ""
+
+    def header(self, name):
+        return self.headers.get(name.lower(), "")
+
+    @property
+    def set_cookies(self):
+        raw = self.headers.get("set-cookie-list", [])
+        return raw if isinstance(raw, list) else []
+
+
+
+    # ---------- raw HTTP/1.1 (Tier B) ----------

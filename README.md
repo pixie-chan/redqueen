@@ -18,12 +18,12 @@
 ```
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.1.0-39d98a?logo=python&logoColor=white" alt="version">
+  <img src="https://img.shields.io/badge/version-2.0.0-39d98a?logo=python&logoColor=white" alt="version">
   <img src="https://img.shields.io/badge/python-3.10%2B-4aa3ff?logo=python&logoColor=white" alt="python">
   <img src="https://img.shields.io/badge/dependencies-ZERO-f0883e" alt="zero deps">
-  <img src="https://img.shields.io/badge/checks-63-ffb020" alt="63 checks">
+  <img src="https://img.shields.io/badge/checks-69-ffb020" alt="69 checks">
   <img src="https://img.shields.io/badge/OWASP%20Top%2010-2025-ff2d55" alt="owasp 2025">
-  <img src="https://img.shields.io/badge/QA-16%2F16%20PASS-39d98a" alt="qa gates">
+  <img src="https://img.shields.io/badge/QA-60%2F60%20PASS-39d98a" alt="qa gates">
   <img src="https://img.shields.io/badge/destructive%20payloads-NONE-ff6b35" alt="non destructive">
 </p>
 
@@ -40,7 +40,7 @@
 [🖼️ Diagrams](#-diagrams) ·
 [🛡️ Safety rails](#-safety-rails) ·
 [🗂️ Scenarios](#-scenarios) ·
-[🕵️ The 63 checks](#-the-63-checks) ·
+[🕵️ The 69 checks](#-the-69-checks) ·
 [🕸️ Recon powers](#-recon-powers) ·
 [📊 Outputs](#-outputs) ·
 [✅ Proof](#-proof) ·
@@ -87,7 +87,7 @@ flowchart TD
     G -->|"in scope, no flag"| P["passive mode<br/>recon groups only"]:::neutral
     G -->|yes| T2["Transport<br/>5 req/s + jitter · budget 500<br/>1 retry · redirect re-check"]:::engine
     T2 --> D["Discovery<br/>3 passes + optional sources"]:::engine
-    D --> R["Runners<br/>12 groups · 63 checks"]:::engine
+    D --> R["Runners<br/>13 groups · 69 checks"]:::engine
     R --> V{"verify pass<br/>CRITICAL or HIGH?"}:::gate
     V -->|reproduced| Z["dedupe + score / 100"]:::engine
     V -->|"not reproduced"| DN["downgrade one level<br/>confidence low"]:::warn
@@ -174,7 +174,7 @@ Built into the engine, not into the documentation.
 
 ---
 
-## 🕵️ The 63 checks
+## 🕵️ The 69 checks
 
 Severity legend:
 
@@ -326,7 +326,7 @@ python3 qa/qa.py
 | unit gate | wayback scope filtering, CT dangling detection, Cert Spotter fallback (network stubbed) |
 | CLI guards | `--list-checks`, missing `--allow` refusal, IP-literal refusal |
 
-Last run: **16/16 gates PASS, exit 0**.
+Last run: **60/60 gates PASS, exit 0**.
 
 ---
 
@@ -435,7 +435,7 @@ restored once).
 ---
 
 <p align="center">
-  <b>redteam.py v1.1.0</b> · 2,155 lines · stdlib only · 63 checks · 16/16 QA gates<br>
+  <b>redteam.py v2.0.0</b> · 4,560 lines · stdlib only · 69 checks · 60/60 QA gates<br>
   built on OWASP Top 10:2025, OWASP WSTG, OWASP Cheat Sheets, PortSwigger Academy,
   NIST SP 800-115, PTES
 </p>

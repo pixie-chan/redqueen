@@ -101,21 +101,146 @@ EXPOSURES = [
 ]
 
 
-def soft404(bot):
-    if bot._soft404 is None:
-        r = bot.get(bot.t.base + "/qx-nonexistent-" + secrets.token_hex(4))
-        bot._soft404 = (r.status, r.text) if r else (404, "")
-    return bot._soft404
+class Calibration:
+    """Learned "this route does not exist" profile.
 
+    Probes N=5 random paths under the target root, keeps the modal status
+    plus a body fingerprint (length bucket of about 15 percent, normalized
+    body similarity at or above 0.90), and uses the real target response as
+    a negative control: if the target itself looks like the not-found page,
+    the profile is flagged as untrustworthy instead of silently swallowing
+    every finding.
 
-def is_soft404(bot, resp):
-    base_status, base_text = soft404(bot)
-    if resp.status != base_status:
-        return False
-    ratio = difflib.SequenceMatcher(
-        None, norm(resp.text[:6000]), norm(base_text[:6000])).ratio()
-    return ratio > 0.90
+    In passive mode (no --i-own-this) it sends NOTHING and reuses one
+    already-fetched response, so a passive scan never probes the target.
+    """
 
+    PROBES = 5
+    SIM_MIN = 0.90
+    LEN_TOL = 0.15
+    LEN_FLOOR = 64          # never call a 10-byte page "same length" as 10k
+
+    def __init__(self, bot):
+        self.bot = bot
+        self.mode = "unlearned"
+        self.status = None
+        self.length = 0
+        self.body = ""
+        self.samples = 0
+        self.probes_sent = 0
+        self.target_matches = None
+        self.detail = "not learned yet"
+
+    @property
+    def ready(self):
+        return self.status is not None
+
+    @property
+    def tolerance(self):
+        return max(self.LEN_FLOOR, int(self.length * self.LEN_TOL))
+
+    def learn(self):
+        if self.ready:
+            return self
+        if self.bot.replay or not getattr(self.bot.args, "i_own_this", False):
+            return self._learn_reuse()
+        return self._learn_active()
+
+    def _learn_active(self):
+        bot = self.bot
+        samples = []
+        for _ in range(self.PROBES):
+            r = bot.get(bot.t.base + "/qx-cal-" + secrets.token_hex(5))
+            self.probes_sent += 1
+            if r is not None and r.body:
+                samples.append(r)
+        if not samples:
+            self.mode = "active"
+            self.detail = (f"all {self.PROBES} calibration probes failed, "
+                           f"soft-404 detection disabled")
+            return self
+        tally = {}
+        for r in samples:
+            tally[r.status] = tally.get(r.status, 0) + 1
+        if len(tally) > 1:
+            bot.note(f"calibration probes disagreed on status: "
+                     f"{dict(sorted(tally.items()))}, using the most common one")
+        self.status = max(sorted(tally), key=lambda k: tally[k])
+        modal = [r for r in samples if r.status == self.status]
+        self.length = sorted(len(r.body) for r in modal)[len(modal) // 2]
+        self.body = norm(modal[0].text)[:6000]
+        self.samples = len(samples)
+        self.mode = "active"
+        self.detail = (f"{self.samples} probes, status {self.status}, "
+                       f"body about {self.length}B (+/-{self.tolerance})")
+        self._control()
+        bot.recon.append(("calibration", self.summary()))
+        return self
+
+    def _learn_reuse(self):
+        """Passive mode: one already-fetched response, zero new requests."""
+        bot = self.bot
+        pick = None
+        for r in bot.pages.values():
+            if r.status >= 400:
+                pick = r
+                break
+        self.mode = "passive-reuse"
+        if pick is None:
+            self.detail = ("passive mode: no not-found response was captured, "
+                           "soft-404 detection stays off")
+            return self
+        self.status = pick.status
+        self.length = len(pick.body)
+        self.body = norm(pick.text)[:6000]
+        self.samples = 1
+        self.detail = (f"passive mode: reused one stored HTTP {self.status} "
+                       f"response, 0 probes sent")
+        if bot.replay:
+            return self
+        bot.recon.append(("calibration", self.summary()))
+        return self
+
+    def _control(self):
+        """Negative control: the real target must not look like a 404."""
+        bot = self.bot
+        r = bot.pages.get(bot.t.base + bot.t.path)
+        if r is None:
+            return
+        self.target_matches = bool(self.is_not_found(r))
+        if self.target_matches:
+            bot.note("calibration: the target itself matches the not-found "
+                     "profile, treat every result as suspect")
+
+    def is_not_found(self, resp):
+        if resp is None or not self.ready:
+            return False
+        if self.status != 200:
+            return resp.status == self.status
+        # A 200-shaped not-found page is only "not found" when the body also
+        # matches: a bare status match would label every real page as missing.
+        return resp.status == 200 and self._body_match(resp)
+
+    def _body_match(self, resp):
+        if not self.body:
+            return False
+        if abs(len(resp.body) - self.length) > self.tolerance:
+            return False
+        ratio = difflib.SequenceMatcher(
+            None, norm(resp.text[:6000]), self.body).ratio()
+        return ratio >= self.SIM_MIN
+
+    def summary(self):
+        return (f"{self.mode}, status {self.status}, body about {self.length}B, "
+                f"sim >= {self.SIM_MIN:.2f}, {self.probes_sent} probes")
+
+    def profile(self):
+        return {"mode": self.mode, "status": self.status,
+                "length": self.length, "length_tolerance": self.tolerance,
+                "similarity_min": self.SIM_MIN, "samples": self.samples,
+                "probes_sent": self.probes_sent,
+                "target_matches_profile": self.target_matches,
+                "detail": self.detail}
 
 GRAPHQL_PATHS = ("/graphql", "/api/graphql", "/v1/graphql")
 
@@ -150,7 +275,7 @@ def check_exposures(bot):
             raise
         if r is None or r.status != 200 or not r.body:
             continue
-        if is_soft404(bot, r):
+        if bot.calibration.is_not_found(r):
             continue
         head = r.body[:4096]
         if check_id == "exp-backup":
@@ -171,5 +296,11 @@ def check_exposures(bot):
         def vfy(u=url):
             rr = bot.get(u)
             return rr is not None and rr.status == 200 and bool(rr.body)
+        if check_id == "exp-api-docs":
+            # keep the document itself, so check_api_states can walk the
+            # paths it declares instead of re-discovering the spec
+            bot.api_docs[url] = r.text
+        # keep the response so the whole-corpus sweep sees exposure files too
+        bot.pages.setdefault(url, r)
         bot.add(check_id, url=url, evidence=f"{label}: {r.header('content-type')} "
                 f"{len(r.body)}B, status {r.status}", verify=vfy)

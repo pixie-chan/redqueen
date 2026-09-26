@@ -26,13 +26,14 @@ import socket
 import ssl
 import sys
 import time
+import unicodedata
 import urllib.parse
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 
 import http.client
 
-VERSION = "1.1.0"
+VERSION = "2.0.0"
 UA = "placeholder_websiteRedTeamBot/1.0 (authorized self-testing)"
 SEV_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "INFO": 4}
 SEV_COLOR = {"CRITICAL": "#ff2d55", "HIGH": "#ff6b35", "MEDIUM": "#ffb020",
@@ -260,6 +261,40 @@ CHECKS = {
  "robots-disclosure": ("A02", "LOW", "robots.txt reveals sensitive paths",
    "disallowed admin/backup paths are published to everyone",
    "remove secret paths from robots.txt, block them at the server instead"),
+ "global-secret-sweep": ("A02", "HIGH", "Secret or trace signature in served content",
+   "a key or an internal trace that no single check looked for is readable by anyone",
+   "pull the value out of client-visible content, rotate it at the provider and keep it server-side; return generic error pages and store traces in private logs"),
+"desync-confirmed": ("A01", "CRITICAL",
+    "Confirmed HTTP request desync cross-contamination (CWE-444)",
+    "one client's request is answered with another client's request or "
+    "response: sessions, responses and cache entries cross over between users",
+    "end to end HTTP/2 or a single strict HTTP/1.1 parser, reject duplicate "
+    "Content-Length and Transfer-Encoding, and validate rewritten requests "
+    "against RFC 9112 before forwarding"),
+  "desync-cells": ("A06", "INFO", "Length-interpretation cell (CL/TE/0/H2) probe",
+    "an anomaly, not a vulnerability: one hop read a different message length "
+    "than another hop did",
+    "read the anomaly table and confirm by hand before changing anything; a "
+    "differential here is a lead, not a bug"),
+  "unicode-oracle": ("A07", "INFO",
+    "Unicode normalization oracle in a reflected value",
+    "an anomaly, not a vulnerability: the stored or echoed form of a value "
+    "differs from the form sent, which can break an identity comparison",
+    "normalize with NFKC on input and on the stored value, compare code-point "
+    "sequences rather than rendered strings, reject mixed-form input at the edge"),
+  "delimiter-confusion": ("A02", "INFO",
+    "Path delimiter handled differently by cache and origin",
+    "an anomaly, not a vulnerability: two hops disagree about what the path "
+    "is, which is the precondition for cache poisoning",
+    "normalize the path once at the edge, cache only on the normalized key, "
+    "reject unencoded ; . and %2e upstream"),
+  "api-state-authz": ("A01", "INFO",
+    "Authorization differential on a documented object path",
+    "an anomaly, not a vulnerability: an unauthenticated read of a single "
+    "object differs from the anonymous collection baseline",
+    "authenticate then authorize per object server-side; add a second "
+    "owner-provided test account to the plan and re-run before concluding "
+    "anything about BOLA"),
 }
 
 GROUPS = {
@@ -283,6 +318,7 @@ GROUPS = {
    "host-header", "subdomain-dangling"],
  "client": ["sri-missing", "mixed-content"],
  "methods": ["method-trace", "method-put"],
+ "sweep": ["global-secret-sweep"],
 }
 SCENARIOS = {
  "recon": ["recon"],
@@ -290,9 +326,18 @@ SCENARIOS = {
  "misconfig": ["exposures", "methods"],
  "injection": ["injection"],
  "auth": ["auth", "jwt"],
+ # the whole-corpus sweep runs after exposures, so it sees the files the
+ # exposure probes captured and not only the crawl
  "full": ["recon", "tls", "headers", "cors", "cookies", "jwt", "secrets",
-   "exposures", "injection", "auth", "client", "methods"],
+   "exposures", "sweep", "injection", "auth", "client", "methods"],
+ "anomaly": ["anomaly"],
+ "tierc": ["tierc"],
+"tierb": ["desync-confirmed", "desync-cells", "unicode-oracle",
+   "delimiter-confusion", "api-state-authz"],
  "api": ["recon", "exposures", "cors", "injection"],
+# the API state walk reads the OpenAPI document that exp-api-docs captured,
+# so the exposures group has to run first inside the tierb scenario
+"tierb": ["exposures", "tierb"],
 }
 
 
@@ -379,6 +424,7 @@ class Transport:
         self.rate_limited = 0
         self.notes = []
         self.lock = threading.Lock()
+        self.frozen = False
         if not local:
             try:
                 ipaddress.ip_address(self.host)
@@ -412,6 +458,11 @@ class Transport:
         return http.client.HTTPConnection(host, port, timeout=self.timeout)
 
     def _budget(self):
+        # A frozen transport is the Tier C guarantee: once the dossier phase
+        # starts, no code path can put bytes on the wire. Checked here, the
+        # single choke point every request passes through.
+        if getattr(self, "frozen", False):
+            raise OutOfScope("transport is frozen (tierc research phase)")
         with self.lock:
             if self.used >= self.max_requests:
                 raise BudgetExceeded(
@@ -521,6 +572,161 @@ class Transport:
             return resp
         return resp
 
+    def _read_exact(self, fh, n):
+        out = b""
+        while len(out) < n:
+            chunk = fh.read(n - len(out))
+            if not chunk:
+                break
+            out += chunk
+        return out
+
+    def _read_raw_response(self, fh, sock):
+        line = fh.readline(65536)
+        if not line:
+            return None
+        parts = line.decode("iso-8859-1", "replace").rstrip("\r\n").split(" ", 2)
+        if len(parts) < 2 or not parts[1].isdigit():
+            return None
+        status, reason = int(parts[1]), (parts[2] if len(parts) > 2 else "")
+        headers = {}
+        while True:
+            hl = fh.readline(65536)
+            if not hl or hl in (b"\r\n", b"\n"):
+                break
+            k, _sep, v = hl.decode("iso-8859-1", "replace").partition(":")
+            kl, v = k.strip().lower(), v.strip()
+            if not kl:
+                continue
+            # a repeated header is joined, which is exactly how a
+            # duplicated Content-Length shows up as an ambiguity
+            headers[kl] = headers[kl] + ", " + v if kl in headers else v
+        body = b""
+        if "chunked" in headers.get("transfer-encoding", "").lower():
+            chunks, size = [], 0
+            for _ in range(32):            # bounded: never a chunked flood
+                sz = fh.readline(65536).strip()
+                if not sz:
+                    break
+                try:
+                    size = int(sz.split(b";")[0], 16)
+                except ValueError:
+                    break
+                if size <= 0:
+                    fh.readline(65536)      # trailing CRLF, trailers dropped
+                    break
+                chunks.append(self._read_exact(fh, size))
+                fh.readline(65536)
+            body = b"".join(chunks)
+        elif "content-length" in headers:
+            first = headers["content-length"].split(",")[0].strip()
+            if first.isdigit():
+                body = self._read_exact(fh, min(int(first), 2_000_000))
+        else:
+            # no framing header: take what arrives, but never block on a
+            # response that stays open
+            try:
+                sock.settimeout(0.5)
+                for _ in range(32):
+                    chunk = fh.read(8192)
+                    if not chunk:
+                        break
+                    body += chunk
+            except OSError:
+                pass
+            finally:
+                sock.settimeout(self.timeout)
+        return RawResp(status, headers, body, reason)
+
+    def raw_exchange(self, url, messages, timeout=None):
+        """Send pre-serialized HTTP/1.1 messages over ONE keep-alive
+        connection and return the responses in order.
+
+        Only the Tier B desync and delimiter probes use this. They need
+        the exact octets on the wire: http.client computes its own
+        framing and drops a duplicate Content-Length, which is precisely
+        the disagreement under test. Both messages are written before
+        either response is read, because a desync is only a desync if the
+        follow-up is already on the wire. Scope-gated and budgeted like
+        request(), one budget tick per message, never retried.
+        """
+        if not self.in_scope(url):
+            raise OutOfScope(url)
+        p = urllib.parse.urlsplit(url)
+        conn = self._conn(p.scheme, p.hostname,
+                          p.port or (443 if p.scheme == "https" else 80))
+        conn.timeout = timeout or self.timeout
+        out, fh = [], None
+        try:
+            sock = None
+            for msg in messages:
+                self._budget()          # may raise BudgetExceeded
+                if sock is None:
+                    conn.connect()
+                    sock = conn.sock
+                    sock.settimeout(timeout or self.timeout)
+                    fh = sock.makefile("rb")
+                sock.sendall(msg)
+            if sock is not None:
+                for _ in messages:
+                    resp = self._read_raw_response(fh, sock)
+                    if resp is None:
+                        break
+                    resp.url = url
+                    out.append(resp)
+        except (OSError, http.client.HTTPException) as e:
+            if not out:                 # partial reads are still data
+                raise RuntimeError(f"{type(e).__name__}: {e}")
+        finally:
+            if fh is not None:
+                try:
+                    fh.close()
+                except Exception:
+                    pass
+            try:
+                conn.close()
+            except Exception:
+                pass
+        return out
+
+
+class RawResp:
+    """A response parsed straight off the socket by Transport.raw_exchange.
+
+    Deliberately not an http.client response: the Tier B probes need the
+    bytes the server actually sent, including a duplicated Content-Length,
+    which http.client either refuses to hand back or normalizes away
+    before we could compare it. Same field names as Resp so the tierb
+    modules can treat both alike."""
+
+    def __init__(self, status, headers, body, reason=""):
+        self.status = status
+        self.headers = headers          # lowercased, repeats joined with ", "
+        self.body = body                # bytes
+        self.reason = reason
+        self.url = ""
+        self.redirects = []
+        self.elapsed = 0.0
+
+    @property
+    def text(self):
+        try:
+            return self.body.decode("utf-8", "replace")
+        except Exception:
+            return ""
+
+    def header(self, name):
+        return self.headers.get(name.lower(), "")
+
+    @property
+    def set_cookies(self):
+        raw = self.headers.get("set-cookie-list", [])
+        return raw if isinstance(raw, list) else []
+
+
+
+    # ---------- raw HTTP/1.1 (Tier B) ----------
+
 
 class PageParser(HTMLParser):
     def __init__(self):
@@ -587,20 +793,58 @@ class Bot:
         self.params = {}          # url -> [param names]
         self.stopped = None
         self.canary = "QX" + secrets.token_hex(5)
-        self._soft404 = None
         self.js_assets = {}
         self.endpoints = set()
         self.script_urls = set()
         self._seen = set()
+        # R2: soft-404 profile, scan-quality warnings, degraded checks,
+        # authenticated-session verdict, and the passive replay switch.
+        # Every new flag is read with getattr so a Namespace built by an
+        # older caller (unit_sources.py) still works unchanged.
+        self.calibration = Calibration(self)
+        self.warnings = []
+        # Tier A + C state. Declared here so a scenario that runs either
+        # engine finds the attributes, and so a degraded engine leaves an
+        # empty list behind instead of raising AttributeError.
+        # Tier A/B anomalies. Interesting, needs human review, never a
+        # finding: they stay out of counts(), the score, the checklist and
+        # the exit code. Shared sink, only `tier` differs.
+        self.anomalies = []
+        self._anomaly_keys = set()
+        self.anomaly_routes = []
+        self.anomaly_requests = 0
+        self.api_docs = {}            # url -> openapi/swagger text found
+        self.tierb = {"desync_requests": 0, "unicode_requests": 0,
+                      "delimiter_requests": 0, "api_state_requests": 0,
+                      "methods": [], "api_spec_source": ""}
+        self.tierc = []
+        self.degraded = []
+        self.status_counts = {}
+        self.responses_seen = 0
+        self.auth_state = {"state": "not-checked", "reason": "",
+                           "verify_url": "", "marker": ""}
+        self.replay = False
+        self.replay_map = {}
+        self.replay_base = None
+        self.replayed = False
 
     # ---------- plumbing ----------
     def get(self, url, headers=None, method="GET", body=None, follow=True):
+        if self.replay:
+            # passive replay: answer from stored responses only, never the
+            # network. bot.t.used must stay exactly 0 for the whole run.
+            r = self.replay_map.get(url)
+            if r is None:
+                self.note(f"replay: no stored response for {url}")
+                return None
+            self._track(r)
+            return r
         hdrs = dict(headers or {})
         if self.args.cookie and "Cookie" not in hdrs:
             hdrs["Cookie"] = self.args.cookie
         try:
-            return self.t.request(method, url, headers=hdrs, body=body,
-                                  follow=follow)
+            r = self.t.request(method, url, headers=hdrs, body=body,
+                               follow=follow)
         except BudgetExceeded as e:
             self.stopped = str(e)
             raise
@@ -610,13 +854,70 @@ class Bot:
         except RuntimeError as e:
             self.notes.append(f"request error {url}: {e}")
             return None
+        self._track(r)
+        return r
+
+    def _track(self, resp):
+        if resp is None:
+            return
+        self.responses_seen += 1
+        self.status_counts[resp.status] = self.status_counts.get(resp.status, 0) + 1
+
+    ANOMALY_DISCLAIMER = ("INTERESTING, NOT A VULNERABILITY: needs human review")
+
+    def add_anomaly(self, check_id, route="", probe_class="", note="",
+                    confidence="low", tier="B", detail="", evidence="",
+                    distance=None, status_delta=None, headers_added=None,
+                    headers_removed=None, canary_reflected=False,
+                    param=None):
+        """Record an anomaly. Anomalies are never findings: they never
+        enter counts(), the score, the checklist or the exit code, and
+        they are never re-verified. Tier A and Tier B share this sink and
+        differ only in the `tier` field, so one report section serves
+        both. Every record carries the disclaimer sentence verbatim."""
+        key = (check_id, route.split("?")[0], probe_class, param or "")
+        if key in self._anomaly_keys:
+            return None
+        self._anomaly_keys.add(key)
+        ev = SECRET_RE.sub(lambda m: m.group(1) + "=***REDACTED***",
+                           evidence or "")[:600]
+        a = {"id": f"A{len(self.anomalies) + 1:03d}", "check_id": check_id,
+             "tier": tier, "route": route, "param": param,
+             "probe_class": probe_class, "confidence": confidence,
+             "distance": distance, "status_delta": status_delta,
+             "headers_added": sorted(headers_added or []),
+             "headers_removed": sorted(headers_removed or []),
+             "canary_reflected": bool(canary_reflected),
+             "note": note, "detail": detail, "evidence": ev,
+             "title": (CHECKS.get(check_id) or ("", "", "", "", ""))[2],
+             "disclaimer": self.ANOMALY_DISCLAIMER}
+        self.anomalies.append(a)
+        return a
 
     def note(self, msg):
         if msg not in self.notes:
             self.notes.append(msg)
 
+    def warn(self, code, message):
+        """Scan-quality warning. One entry per code, always recorded."""
+        if any(w["code"] == code for w in self.warnings):
+            return
+        self.warnings.append({"code": code, "message": message})
+
+    def degrade(self, who, why):
+        self.degraded.append(f"{who}: {why}")
+
     def add(self, check_id, url="", param=None, severity=None, evidence="",
-            fix=None, confidence="high", detail=None, verify=None):
+            fix=None, confidence="high", detail=None, verify=None,
+            internal=False, negative=False):
+        """Record a finding.
+
+        internal=True  evidence only: stored and reported, but never counted
+                       in counts(), the score, checks_fired or the exit code.
+        negative=True  the signal is the ABSENCE of something. Scored and
+                       counted exactly like a positive finding; the flag only
+                       documents that the matcher fires on a missing control.
+        """
         spec = CHECKS.get(check_id)
         if spec is None:
             raise KeyError(check_id)
@@ -633,14 +934,28 @@ class Bot:
              "confidence": confidence, "verified": False, "url": url,
              "param": param, "evidence": ev, "fix": fix or dfix,
              "impact": impact, "detail": detail or "",
+             "internal": bool(internal), "negative": bool(negative),
+             "used_cookie": bool(getattr(self.args, "cookie", None)),
              "refs": [OWASP_URL.get(owasp, CHEATSHEET + "Reporting_Cheat_Sheet.html")]}
         self.findings.append(f)
         if verify is not None:
             self._verify[f["id"]] = verify
         return f
 
+    def scored(self):
+        """Findings that count: internal evidence records do not."""
+        return [f for f in self.findings if not f.get("internal")]
+
+    def evidence_records(self):
+        return [f for f in self.findings if f.get("internal")]
+
+    def fired_check_ids(self):
+        return {f["check_id"] for f in self.scored()}
+
     def verify_findings(self):
         for f in list(self.findings):
+            if f.get("internal"):
+                continue
             if f["severity"] not in ("CRITICAL", "HIGH"):
                 continue
             fn = self._verify.get(f["id"])
@@ -662,7 +977,7 @@ class Bot:
 
     def score(self):
         total = 100.0
-        for f in self.findings:
+        for f in self.scored():
             w = {"CRITICAL": 25, "HIGH": 12, "MEDIUM": 5, "LOW": 2,
                  "INFO": 0}[f["severity"]]
             if not f["verified"] and f["severity"] in ("CRITICAL", "HIGH"):
@@ -672,9 +987,120 @@ class Bot:
 
     def counts(self):
         c = {k: 0 for k in SEV_ORDER}
-        for f in self.findings:
+        for f in self.scored():
             c[f["severity"]] += 1
         return c
+
+    # ---------- R2: quality, auth, passive replay ----------
+    def soft404_audit(self):
+        """(soft404-shaped, genuinely live) counts over the captured pages."""
+        soft = live = 0
+        for r in self.pages.values():
+            if self.calibration.is_not_found(r):
+                soft += 1
+            elif r.status < 400:
+                live += 1
+        return soft, live
+
+    def verify_auth(self):
+        """M14: one cheap fetch of the verify URL decides whether the cookie
+        the operator passed is actually authenticated. Runs after discovery,
+        so the first cookie-bearing request has already happened. Without
+        --cookie nothing is fetched: there is no session to verify."""
+        url = getattr(self.args, "auth_verify_url", None) or (
+            self.t.base + self.t.path)
+        marker = getattr(self.args, "auth_marker", None) or ""
+        cookie = getattr(self.args, "cookie", None)
+        if not cookie:
+            self.auth_state = {
+                "state": "unverified", "verify_url": url, "marker": marker,
+                "reason": "no --cookie supplied, so every request in this run "
+                          "was anonymous and nothing proves a session"}
+            self.recon.append(("auth", "unverified (no --cookie)"))
+            return self.auth_state
+        r = self.get(url)
+        if r is None:
+            reason = f"verify url {url} could not be fetched"
+        elif LOGIN_RE.search(r.text[:20000]):
+            reason = (f"{url} still serves a login or signin form, so the "
+                      f"supplied cookie does not authenticate")
+        else:
+            marker_ok = bool(marker) and marker in r.text
+            echo = [c.split(";", 1)[0].split("=", 1)[0].strip()
+                    for c in (r.headers.get("set-cookie-list") or [])]
+            echo = [c for c in echo if re.search(
+                r"(session|sess|sid|token|auth|jwt|phpsess|jsession|connect\.sid)",
+                c, re.I)]
+            if marker_ok or echo:
+                how = ("--auth-marker present" if marker_ok
+                       else "session cookie echoed: " + ", ".join(echo))
+                self.auth_state = {
+                    "state": "verified", "verify_url": url, "marker": marker,
+                    "reason": f"{url} returned HTTP {r.status} with no login "
+                              f"form and {how}"}
+                self.recon.append(("auth", f"verified ({how})"))
+                return self.auth_state
+            reason = (f"{url} returned HTTP {r.status} with no login form, but "
+                      f"neither the --auth-marker nor a session cookie echo "
+                      f"was observed")
+        self.auth_state = {"state": "unverified", "verify_url": url,
+                           "marker": marker, "reason": reason}
+        self.recon.append(("auth", f"unverified ({reason[:100]})"))
+        return self.auth_state
+
+    def downgrade_cookie_confidence(self):
+        """An unverified session means every finding collected with that
+        cookie may just be the anonymous view of the page."""
+        if not (getattr(self.args, "cookie", None)
+                and self.auth_state.get("state") == "unverified"):
+            return 0
+        n = 0
+        for f in self.findings:
+            if f.get("used_cookie") and f.get("confidence") == "high":
+                f["confidence"] = "medium"
+                n += 1
+        if n:
+            self.note(f"{n} findings downgraded to medium confidence: the "
+                      f"supplied cookie could not be verified as authenticated")
+        return n
+
+    # ---------- R2: passive replay ----------
+    def load_passive_files(self, paths):
+        """Read saved HTML into synthetic responses. No request is made."""
+        added = []
+        for path in paths or []:
+            try:
+                with open(path, "rb") as fh:
+                    data = fh.read(2_000_000)
+            except OSError as e:
+                self.note(f"passive file unreadable: {path} ({e})")
+                continue
+            head = data[:600].decode("utf-8", "replace").lower()
+            ctype = ("text/html; charset=utf-8"
+                     if "<html" in head or "<!doctype" in head
+                     else "text/plain; charset=utf-8")
+            url = "file://" + os.path.abspath(path)
+            self.pages[url] = Resp(200, {
+                "content-type": ctype,
+                "content-length": str(len(data)),
+                "x-qx-passive-file": os.path.abspath(path)},
+                data, url, [], 0.0)
+            added.append(url)
+        if added:
+            self.recon.append(("passive files", f"{len(added)} loaded from disk"))
+            self.note(f"passive replay: {len(added)} stored response(s), "
+                      f"0 requests sent")
+        return added
+
+    def enter_replay(self):
+        self.replay_map = dict(self.pages)
+        self.replay = True
+        self.replayed = True
+
+    def exit_replay(self):
+        self.replay = False
+        self.replay_map = {}
+        self.replay_base = None
 
     # ---------- discovery ----------
     def fetch(self, url):
@@ -687,6 +1113,13 @@ class Bot:
         base = self.t.base + self.t.path
         r = self.fetch(base)
         if r is None:
+            # Tier C is documentation-only and must work with no reachable
+            # target at all; every other scenario needs the seed page.
+            if getattr(self.args, "scenario", "") == "tierc" or \
+                    getattr(self.args, "tierc_candidates", None):
+                self.note("tier C: target unreachable, continuing with "
+                          "documentation only (sends nothing)")
+                return
             raise SystemExit("target unreachable or out of scope")
         self.recon.append(("target", base))
         self.recon.append(("status", str(r.status)))
@@ -746,6 +1179,9 @@ class Bot:
             self._ct_log()
         else:
             self.recon.append(("ct-log", "off (add --ct-log)"))
+        # learn the not-found profile once the crawl is done, so every later
+        # check (exposures, sweep, scan-quality) shares one verdict
+        self.calibration.learn()
 
     def _crawl(self):
         queue = [u for u in sorted(self.urls)]
@@ -950,6 +1386,9 @@ def title_of(body):
 
 
 def base_page(bot):
+    # a passive replay points base_page at the stored response being judged
+    if getattr(bot, "replay_base", None):
+        return bot.replay_base
     return bot.t.base + bot.t.path
 
 
@@ -965,7 +1404,8 @@ def check_headers(bot):
         return rr is not None
     if bot.t.scheme == "https":
         if "strict-transport-security" not in h:
-            bot.add("hdr-hsts", url=url, evidence="header absent", verify=vfy)
+            bot.add("hdr-hsts", url=url, evidence="header absent", verify=vfy,
+                    negative=True)
         else:
             m = re.search(r"max-age=(\d+)", h["strict-transport-security"])
             if m and int(m.group(1)) < 86400:
@@ -975,28 +1415,32 @@ def check_headers(bot):
     if is_html:
         csp = h.get("content-security-policy", "")
         if not csp:
-            bot.add("hdr-csp-missing", url=url, evidence="header absent", verify=vfy)
+            bot.add("hdr-csp-missing", url=url, evidence="header absent",
+                    verify=vfy, negative=True)
         elif re.search(r"script-src[^;]*'unsafe-inline'", csp) or \
                 re.search(r"default-src[^;]*'unsafe-inline'", csp) or \
                 re.search(r"'unsafe-eval'", csp):
             bot.add("hdr-csp-unsafe", url=url, evidence=csp[:300], verify=vfy)
         if "x-frame-options" not in h and "frame-ancestors" not in csp:
             bot.add("clickjack", url=url, evidence="no XFO and no frame-ancestors",
-                    verify=vfy)
+                    verify=vfy, negative=True)
         if "referrer-policy" not in h:
-            bot.add("hdr-referrer", url=url, evidence="header absent")
+            bot.add("hdr-referrer", url=url, evidence="header absent",
+                    negative=True)
         if "permissions-policy" not in h:
-            bot.add("hdr-permissions", url=url, evidence="header absent")
+            bot.add("hdr-permissions", url=url, evidence="header absent",
+                    negative=True)
         if "cross-origin-opener-policy" not in h:
-            bot.add("hdr-coop", url=url, evidence="header absent")
+            bot.add("hdr-coop", url=url, evidence="header absent", negative=True)
         if "cross-origin-resource-policy" not in h:
-            bot.add("hdr-corp", url=url, evidence="header absent")
+            bot.add("hdr-corp", url=url, evidence="header absent", negative=True)
         if "x-content-type-options" not in h:
-            bot.add("hdr-nosniff", url=url, evidence="header absent", verify=vfy)
+            bot.add("hdr-nosniff", url=url, evidence="header absent",
+                    verify=vfy, negative=True)
     for purl, pr in list(bot.pages.items())[:12]:
         if re.search(r"(login|signin|account|dashboard|admin|settings|profile|checkout)",
                      purl, re.I) and "cache-control" not in pr.headers:
-            bot.add("hdr-cache-sensitive", url=purl,
+            bot.add("hdr-cache-sensitive", url=purl, negative=True,
                     evidence="no Cache-Control on a sensitive page")
             break
     xss = h.get("x-xss-protection", "")
@@ -1158,6 +1602,7 @@ def check_jwt(bot):
                     break
         if "exp" not in pay:
             bot.add("jwt-no-exp", url=base_page(bot), param="jwt",
+                    negative=True,
                     evidence=f"claims present: {', '.join(sorted(pay)[:8])}")
         else:
             try:
@@ -1270,21 +1715,146 @@ EXPOSURES = [
 ]
 
 
-def soft404(bot):
-    if bot._soft404 is None:
-        r = bot.get(bot.t.base + "/qx-nonexistent-" + secrets.token_hex(4))
-        bot._soft404 = (r.status, r.text) if r else (404, "")
-    return bot._soft404
+class Calibration:
+    """Learned "this route does not exist" profile.
 
+    Probes N=5 random paths under the target root, keeps the modal status
+    plus a body fingerprint (length bucket of about 15 percent, normalized
+    body similarity at or above 0.90), and uses the real target response as
+    a negative control: if the target itself looks like the not-found page,
+    the profile is flagged as untrustworthy instead of silently swallowing
+    every finding.
 
-def is_soft404(bot, resp):
-    base_status, base_text = soft404(bot)
-    if resp.status != base_status:
-        return False
-    ratio = difflib.SequenceMatcher(
-        None, norm(resp.text[:6000]), norm(base_text[:6000])).ratio()
-    return ratio > 0.90
+    In passive mode (no --i-own-this) it sends NOTHING and reuses one
+    already-fetched response, so a passive scan never probes the target.
+    """
 
+    PROBES = 5
+    SIM_MIN = 0.90
+    LEN_TOL = 0.15
+    LEN_FLOOR = 64          # never call a 10-byte page "same length" as 10k
+
+    def __init__(self, bot):
+        self.bot = bot
+        self.mode = "unlearned"
+        self.status = None
+        self.length = 0
+        self.body = ""
+        self.samples = 0
+        self.probes_sent = 0
+        self.target_matches = None
+        self.detail = "not learned yet"
+
+    @property
+    def ready(self):
+        return self.status is not None
+
+    @property
+    def tolerance(self):
+        return max(self.LEN_FLOOR, int(self.length * self.LEN_TOL))
+
+    def learn(self):
+        if self.ready:
+            return self
+        if self.bot.replay or not getattr(self.bot.args, "i_own_this", False):
+            return self._learn_reuse()
+        return self._learn_active()
+
+    def _learn_active(self):
+        bot = self.bot
+        samples = []
+        for _ in range(self.PROBES):
+            r = bot.get(bot.t.base + "/qx-cal-" + secrets.token_hex(5))
+            self.probes_sent += 1
+            if r is not None and r.body:
+                samples.append(r)
+        if not samples:
+            self.mode = "active"
+            self.detail = (f"all {self.PROBES} calibration probes failed, "
+                           f"soft-404 detection disabled")
+            return self
+        tally = {}
+        for r in samples:
+            tally[r.status] = tally.get(r.status, 0) + 1
+        if len(tally) > 1:
+            bot.note(f"calibration probes disagreed on status: "
+                     f"{dict(sorted(tally.items()))}, using the most common one")
+        self.status = max(sorted(tally), key=lambda k: tally[k])
+        modal = [r for r in samples if r.status == self.status]
+        self.length = sorted(len(r.body) for r in modal)[len(modal) // 2]
+        self.body = norm(modal[0].text)[:6000]
+        self.samples = len(samples)
+        self.mode = "active"
+        self.detail = (f"{self.samples} probes, status {self.status}, "
+                       f"body about {self.length}B (+/-{self.tolerance})")
+        self._control()
+        bot.recon.append(("calibration", self.summary()))
+        return self
+
+    def _learn_reuse(self):
+        """Passive mode: one already-fetched response, zero new requests."""
+        bot = self.bot
+        pick = None
+        for r in bot.pages.values():
+            if r.status >= 400:
+                pick = r
+                break
+        self.mode = "passive-reuse"
+        if pick is None:
+            self.detail = ("passive mode: no not-found response was captured, "
+                           "soft-404 detection stays off")
+            return self
+        self.status = pick.status
+        self.length = len(pick.body)
+        self.body = norm(pick.text)[:6000]
+        self.samples = 1
+        self.detail = (f"passive mode: reused one stored HTTP {self.status} "
+                       f"response, 0 probes sent")
+        if bot.replay:
+            return self
+        bot.recon.append(("calibration", self.summary()))
+        return self
+
+    def _control(self):
+        """Negative control: the real target must not look like a 404."""
+        bot = self.bot
+        r = bot.pages.get(bot.t.base + bot.t.path)
+        if r is None:
+            return
+        self.target_matches = bool(self.is_not_found(r))
+        if self.target_matches:
+            bot.note("calibration: the target itself matches the not-found "
+                     "profile, treat every result as suspect")
+
+    def is_not_found(self, resp):
+        if resp is None or not self.ready:
+            return False
+        if self.status != 200:
+            return resp.status == self.status
+        # A 200-shaped not-found page is only "not found" when the body also
+        # matches: a bare status match would label every real page as missing.
+        return resp.status == 200 and self._body_match(resp)
+
+    def _body_match(self, resp):
+        if not self.body:
+            return False
+        if abs(len(resp.body) - self.length) > self.tolerance:
+            return False
+        ratio = difflib.SequenceMatcher(
+            None, norm(resp.text[:6000]), self.body).ratio()
+        return ratio >= self.SIM_MIN
+
+    def summary(self):
+        return (f"{self.mode}, status {self.status}, body about {self.length}B, "
+                f"sim >= {self.SIM_MIN:.2f}, {self.probes_sent} probes")
+
+    def profile(self):
+        return {"mode": self.mode, "status": self.status,
+                "length": self.length, "length_tolerance": self.tolerance,
+                "similarity_min": self.SIM_MIN, "samples": self.samples,
+                "probes_sent": self.probes_sent,
+                "target_matches_profile": self.target_matches,
+                "detail": self.detail}
 
 GRAPHQL_PATHS = ("/graphql", "/api/graphql", "/v1/graphql")
 
@@ -1319,7 +1889,7 @@ def check_exposures(bot):
             raise
         if r is None or r.status != 200 or not r.body:
             continue
-        if is_soft404(bot, r):
+        if bot.calibration.is_not_found(r):
             continue
         head = r.body[:4096]
         if check_id == "exp-backup":
@@ -1340,6 +1910,12 @@ def check_exposures(bot):
         def vfy(u=url):
             rr = bot.get(u)
             return rr is not None and rr.status == 200 and bool(rr.body)
+        if check_id == "exp-api-docs":
+            # keep the document itself, so check_api_states can walk the
+            # paths it declares instead of re-discovering the spec
+            bot.api_docs[url] = r.text
+        # keep the response so the whole-corpus sweep sees exposure files too
+        bot.pages.setdefault(url, r)
         bot.add(check_id, url=url, evidence=f"{label}: {r.header('content-type')} "
                 f"{len(r.body)}B, status {r.status}", verify=vfy)
 
@@ -1577,11 +2153,28 @@ def mask_token(raw):
     return raw[:6] + "*" * (len(raw) - 10) + raw[-4:]
 
 
+def secret_hash(value, url):
+    """Stable dedupe key for one secret value seen on one URL."""
+    return hashlib.sha256((value + "\n" + url).encode("utf-8", "replace")
+                          ).hexdigest()[:16]
+
+
 def make_secret_vfy(bot, url, rx):
     def v():
         rr = bot.get(url)
         return rr is not None and rx.search(rr.text) is not None
     return v
+
+
+def header_blob(resp):
+    """Every header the server sent, as one searchable string."""
+    out = []
+    for k, v in resp.headers.items():
+        if k == "set-cookie-list":
+            out.extend(str(x) for x in (v or []))
+        else:
+            out.append(f"{k}: {v}")
+    return "\n".join(out)
 
 
 def check_secrets(bot):
@@ -1595,13 +2188,104 @@ def check_secrets(bot):
             if not m:
                 continue
             raw = m.group(0)
-            bot.add("secret-leak", url=src_url, severity=sev, param=name,
-                    confidence="medium" if name == "Google API key" else "high",
-                    evidence=f"{name} in served content: {mask_token(raw)} "
-                             f"(value redacted)",
-                    detail="client-visible secret: treat as compromised, "
-                           "rotate it and move it server-side",
-                    verify=make_secret_vfy(bot, src_url, rx))
+            f = bot.add("secret-leak", url=src_url, severity=sev, param=name,
+                        confidence="medium" if name == "Google API key"
+                        else "high",
+                        evidence=f"{name} in served content: "
+                                 f"{mask_token(raw)} (value redacted)",
+                        detail="client-visible secret: treat as compromised, "
+                               "rotate it and move it server-side",
+                        verify=make_secret_vfy(bot, src_url, rx))
+            if f is not None:
+                f["secret_hash"] = secret_hash(raw, src_url)
+
+
+# M8 global matcher sweep: run once over every captured response, body AND
+# headers, with the secret patterns plus the stack-trace signatures. Same
+# secret on the same URL is reported once, no matter which check found it.
+SWEEP_RES = [
+    ("Embedded private key",
+     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"), "CRITICAL"),
+    ("AWS access key ID", re.compile(r"AKIA[0-9A-Z]{16}"), "HIGH"),
+    ("Stripe live secret", re.compile(r"sk_live_[0-9A-Za-z]{10,}"), "HIGH"),
+    ("GitHub token", re.compile(r"ghp_[A-Za-z0-9]{20,}"), "HIGH"),
+    ("Slack token", re.compile(r"xox[baprs]-[A-Za-z0-9-]{10,}"), "HIGH"),
+    ("Google API key", re.compile(r"AIza[0-9A-Za-z_-]{35}"), "HIGH"),
+    ("OpenAI-style secret key", re.compile(r"(?<![\w-])sk-[A-Za-z0-9]{32,}"),
+     "HIGH"),
+    ("Bearer credential",
+     re.compile(r"(?i)bearer[\"'\s:=]{1,4}[A-Za-z0-9._\-]{25,}"), "HIGH"),
+] + [("Stack trace: " + label, re.compile(rx), "HIGH")
+     for rx, label in STACK_SIGS]
+
+
+def sweep_family(name):
+    """One stack trace per page is a finding; the rest is noise. Every secret
+    pattern keeps its own family so a page carrying two different keys still
+    reports both."""
+    return "stack-trace" if name.startswith("Stack trace: ") else name
+
+
+def make_sweep_vfy(bot, url, rx, where):
+    def v():
+        rr = bot.get(url)
+        if rr is None:
+            return False
+        if where == "body":
+            return rx.search(rr.text) is not None
+        return rx.search(header_blob(rr)) is not None
+    return v
+
+
+def check_global_sweep(bot):
+    reported = {f["secret_hash"] for f in bot.findings
+                if f["check_id"] == "secret-leak" and f.get("secret_hash")}
+    swept = matched = dupes = collapsed = 0
+    seen_family = set()
+    for url, r in bot.pages.items():
+        for where, text in (("body", r.text), ("header", header_blob(r))):
+            if not text or len(text) > 2_000_000:
+                continue
+            swept += 1
+            for name, rx, sev in SWEEP_RES:
+                m = rx.search(text)
+                if not m:
+                    continue
+                matched += 1
+                fam = (url, sweep_family(name))
+                if fam in seen_family:
+                    collapsed += 1
+                    continue
+                seen_family.add(fam)
+                raw = m.group(0)
+                h = secret_hash(raw, url)
+                if h in reported:
+                    dupes += 1
+                    bot.add("global-secret-sweep", url=url, param=f"dedupe:{name}",
+                            internal=True, severity="INFO",
+                            evidence=f"{name} on {url} was already reported as "
+                                     f"secret-leak (hash {h}); suppressed here so "
+                                     f"one secret counts once")
+                    continue
+                reported.add(h)
+                f = bot.add("global-secret-sweep", url=url, param=name,
+                            severity=sev,
+                            evidence=f"{name} matched in the {where} of this "
+                                     f"response: {mask_token(raw)} "
+                                     f"(value redacted)",
+                            detail="found by the global matcher sweep across "
+                                   "every captured response, not only where an "
+                                   "exposure probe happened to land",
+                            verify=make_sweep_vfy(bot, url, rx, where))
+                if f is not None:
+                    f["secret_hash"] = h
+    bot.add("global-secret-sweep", url=bot.t.base, param="sweep-evidence",
+            internal=True, severity="INFO",
+            evidence=f"global sweep read {swept} captured response halves "
+                     f"({len(bot.pages)} responses, bodies and headers): "
+                     f"{matched} pattern matches, {dupes} already reported by "
+                     f"secret-leak, {collapsed} more signatures of an already "
+                     f"reported class on the same page")
 
 
 def check_auth(bot):
@@ -1639,7 +2323,7 @@ def check_auth(bot):
         if not has_token:
             bot.add("csrf-token-missing", url=action,
                     param=",".join(n for n in names if n)[:80],
-                    confidence="medium",
+                    confidence="medium", negative=True,
                     evidence=f"POST form with fields: {', '.join(names)[:160]} "
                              f"and no hidden CSRF token",
                     detail="confirm by replaying from a cross-origin page on a "
@@ -1702,7 +2386,7 @@ def check_sectxt(bot):
             bot.recon.append(("security.txt", path))
             return
     bot.add("sec-txt-missing", url=bot.t.base + "/.well-known/security.txt",
-            evidence="no RFC 9116 security.txt found")
+            evidence="no RFC 9116 security.txt found", negative=True)
 
 
 def check_client(bot):
@@ -1741,6 +2425,942 @@ def check_client(bot):
                         evidence=f"source map served ({len(mr.body)}B)",
                         verify=lambda u=map_url: True)
 
+# ---------- Tier B: empty-taxonomy surface hunting ----------
+# CWE-444 has existed since 2008, so the novel part is never a new class
+# name, it is a new MECHANISM. TE.0 exists because somebody asked "why is
+# there no TE.0?" and then validated the answer against a live target.
+# These four modules enumerate the cells nobody has tested instead of
+# replaying the classic CL.TE probe.
+#
+# THE RULE: everything here emits ANOMALIES (bot.anomalies, tier "B"),
+# never findings. The single exception is a confirmed desync
+# cross-contamination, which IS a finding. Anomalies never touch
+# counts(), the score or the exit code.
+
+TIERB_DESYNC_CAP = 8          # hard cap for the whole desync module
+TIERB_CHUNK_MAX = 64          # never send a chunked body larger than this
+TIERB_BODY_DELTA = 0.15       # normalized body distance that counts as differs
+TIERB_STATUS_TOLERANCE = 0    # a status is categorical: any change is a change
+TIERB_UNICODE_CAP = 12
+TIERB_DELIMITER_CAP = 10
+TIERB_API_CAP = 30
+DESYNC_CELLS = ("CL", "TE", "0", "H2")
+
+
+def tierb_base(bot):
+    return bot.t.base + (bot.t.path or "/")
+
+
+def tierb_host_header(bot, url):
+    p = urllib.parse.urlsplit(url)
+    host = p.hostname or bot.t.host
+    default = 443 if p.scheme == "https" else 80
+    if p.port and p.port != default:
+        return "%s:%d" % (host, p.port)
+    return host
+
+
+def tierb_message(method, target, host_header, headers=None, body=None):
+    """Serialize one HTTP/1.1 request as bytes.
+
+    The Tier B probes need byte-exact control of the request line and of
+    the framing headers, so they cannot go through http.client: it
+    computes its own Content-Length and drops a duplicate one, which is
+    exactly the disagreement under test. body is the bytes that follow
+    the blank line, never a length of its own.
+    """
+    lines = ["%s %s HTTP/1.1" % (method, target), "Host: " + host_header,
+             "User-Agent: " + UA, "Accept: */*", "Connection: keep-alive"]
+    for k, v in (headers or {}).items():
+        lines.append("%s: %s" % (k, v))
+    head = ("\r\n".join(lines) + "\r\n\r\n").encode("iso-8859-1", "replace")
+    if body is None:
+        return head
+    if isinstance(body, str):
+        body = body.encode("utf-8", "replace")
+    return head + body
+
+
+def tierb_distance(a, b):
+    """Normalized body distance in [0, 1]. 0 means identical once
+    canaries, long digit runs and whitespace are normalized away."""
+    return 1.0 - difflib.SequenceMatcher(None, norm(a), norm(b)).ratio()
+
+
+def tierb_notfound(bot, spend):
+    """The not-found profile every Tier B differential is measured against.
+
+    R2 (prompt 1) replaces soft404() with a learned Calibration object.
+    Until that lands this reuses the single probe soft404() already caches
+    on the bot, so nothing is re-fetched and the two can never disagree
+    about what "not found" means on this target."""
+    if not hasattr(bot, "_soft404"):
+        # R2 replaced the old soft404 cache with the learned Calibration
+        # object. Callers unpack (status, text), so hand back that pair
+        # from the calibration profile instead of the object itself.
+        cal = bot.calibration
+        if getattr(cal, "ready", False):
+            return (getattr(cal, "status", 404) or 404,
+                    getattr(cal, "body", "") or "")
+        # nothing learned yet (replay or passive): synthesize from the
+        # stored pages so the probe still has a comparison baseline
+        for _u, _r in (getattr(bot, "pages", None) or {}).items():
+            if _r is not None and _r.status >= 400:
+                return _r.status, _r.text
+        return 404, ""
+    if bot._soft404 is None:
+        spend()
+    status, text = soft404(bot)
+    return status, text
+
+
+def tierb_send(bot, url, messages, label, method="GET"):
+    """One raw keep-alive exchange, with the transport errors folded into
+    engine notes instead of taking the module down. Every message sent is
+    recorded in bot.tierb["methods"], so a QA gate can assert the verb set
+    from the bot side as well as from the server side."""
+    try:
+        responses = bot.t.raw_exchange(url, messages)
+    except BudgetExceeded:
+        raise
+    except OutOfScope as e:
+        bot.note("blocked out-of-scope request: %s" % e)
+        return []
+    except Exception as e:
+        bot.note("%s not sent: %s: %s" % (label, type(e).__name__, e))
+        return []
+    bot.tierb["methods"].extend([method] * len(messages))
+    return responses
+
+
+def tierb_header_delta(a, b):
+    return (sorted(set(b.headers) - set(a.headers)),
+            sorted(set(a.headers) - set(b.headers)))
+
+
+# ---------- module 1: the four length-interpretation cells ----------
+def tierb_cell_pair(cell, target, host, marker):
+    """The two requests for one cell: a setup request whose body embeds the
+    per-run canary, then a follow-up GET with a zero-length body.
+
+    Every cell uses GET, never POST. A body-carrying GET is a perfectly
+    good smuggling carrier and cannot mutate server state, which the
+    safety rails forbid outright. Content-Length and Transfer-Encoding
+    are never both attached to a real body, and the chunked body stays
+    under TIERB_CHUNK_MAX bytes.
+    """
+    if cell == "CL":
+        setup = tierb_message("GET", target, host, headers={
+            "Content-Type": "application/octet-stream",
+            "Content-Length": str(len(marker))}, body=marker)
+    elif cell == "TE":
+        if len(marker) > TIERB_CHUNK_MAX:
+            return None, None
+        chunked = "%x\r\n%s\r\n0\r\n\r\n" % (len(marker), marker)
+        setup = tierb_message("GET", target, host, headers={
+            "Content-Type": "application/octet-stream",
+            "Transfer-Encoding": "chunked"}, body=chunked)
+    elif cell == "0":
+        # implicit zero: a Content-Length that promises bytes this request
+        # never carries, so a hop that trusts CL and a hop that defaults
+        # to zero disagree about where the message ends
+        setup = tierb_message("GET", target, host, headers={
+            "Content-Length": str(len(marker))})
+    else:
+        return None, None
+    follow = tierb_message("GET", target, host,
+                           headers={"Content-Length": "0"})
+    return setup, follow
+
+
+def check_desync_cells(bot):
+    """Probe CL, TE, 0 and H2 in that order, one keep-alive connection per
+    cell, at most two requests per cell, at most 8 requests in total.
+
+    A canary that comes back in the follow-up is cross-contamination and
+    is the one thing in Tier B that is a finding. Everything else is a
+    differential worth a human's time and nothing more, so it is an
+    anomaly.
+    """
+    if not getattr(bot.args, "desync_probe", False):
+        bot.add_anomaly(
+            "desync-cells", route=tierb_base(bot), probe_class="not-probed",
+            note="desync cells were not probed: pass --desync-probe to walk "
+                 "the CL, TE, 0 and H2 length-interpretation cells",
+            detail="without the flag this module sends nothing at all")
+        return
+
+    used = [0]
+
+    def spend():
+        used[0] += 1
+
+    def exhausted():
+        return used[0] >= TIERB_DESYNC_CAP
+
+    path = getattr(bot.args, "desync_path", None) or bot.t.path or "/"
+    if not path.startswith("/"):
+        path = "/" + path
+    url = bot.t.base + path
+    host = tierb_host_header(bot, url)
+    marker = bot.canary + secrets.token_hex(3)      # unique per run, inert
+    nf_status, nf_text = tierb_notfound(bot, spend)
+    bot.tierb["desync_requests"] = used[0]
+
+    # H2 is recorded first so the cell is accounted for even if the cap
+    # stops the loop before it. http.client speaks HTTP/1.1 only, so this
+    # cell is detection-only: it is never sent, with or without
+    # --allow-h2-probe, which relaxes reporting and nothing else.
+    relaxed = getattr(bot.args, "allow_h2_probe", False)
+    bot.add_anomaly(
+        "desync-cells", route=url, probe_class="H2",
+        note="skipped: needs an HTTP/2 client" + (
+            "; --allow-h2-probe relaxes reporting only, still nothing sent"
+            if relaxed else "; nothing was sent for this cell"),
+        detail="HTTP/2 gives the frame its own length, so it is a different "
+               "mechanism than HTTP/1.1 framing. Test it with a real HTTP/2 "
+               "client (nghttp2, h2load) rather than a desync probe here")
+
+    for cell in ("CL", "TE", "0"):
+        if exhausted():
+            bot.note("desync module stopped at its %d request cap before "
+                     "cell %s" % (TIERB_DESYNC_CAP, cell))
+            break
+        setup, follow = tierb_cell_pair(cell, path, host, marker)
+        if setup is None:
+            continue
+        responses = tierb_send(bot, url, [setup, follow], "desync cell " + cell)
+        used[0] += 2
+        bot.tierb["desync_requests"] = used[0]
+        if not responses:
+            bot.note("desync cell %s: no response to the follow-up" % cell)
+            continue
+        head, tail = responses[0], responses[-1]
+        reflected = marker in tail.text
+        dist = tierb_distance(tail.text, nf_text)
+        delta = tail.status - nf_status
+        added, removed = tierb_header_delta(head, tail)
+        if reflected:
+            f = bot.add(
+                "desync-confirmed", url=url,
+                evidence="cell %s: the follow-up response carried the canary "
+                         "planted by the setup request on the same connection "
+                         "(%s). setup status %s, follow-up status %s, %dB"
+                         % (cell, marker, head.status, tail.status,
+                            len(tail.body)),
+                detail="cross-contamination confirmed: one request was "
+                       "answered with bytes queued by another. CWE-444, "
+                       "https://cwe.mitre.org/data/definitions/444.html",
+                verify=lambda: True)
+            if f is not None:
+                f["refs"].append(
+                    "https://cwe.mitre.org/data/definitions/444.html")
+            bot.note("desync confirmed in cell %s, remaining cells skipped"
+                     % cell)
+            return
+        if dist > TIERB_BODY_DELTA or delta != 0:
+            bot.add_anomaly(
+                "desync-cells", route=url, probe_class=cell,
+                distance=round(dist, 3), status_delta=delta,
+                headers_added=added, headers_removed=removed,
+                canary_reflected=False,
+                note="cell %s: the follow-up answered status %s against a "
+                     "calibrated not-found baseline of %s, body distance %.2f "
+                     "from that profile" % (cell, tail.status, nf_status, dist),
+                evidence="setup: %s framing carrying marker %s\n"
+                         "follow-up: status %s, %dB, distance %.2f\n"
+                         "head excerpt: %r\ntail excerpt: %r"
+                         % (cell, marker, tail.status, len(tail.body), dist,
+                            head.text[:200], tail.text[:200]))
+
+
+# ---------- module 2: unicode normalization oracles ----------
+# U+212A folds to 'K' and U+FF21 folds to 'A' under NFKC; a base letter
+# plus U+0301 is the same grapheme as the precomposed character under NFC
+# and a different byte string under NFD. A server that stores one form and
+# compares against the other can be made to call two strings one identity.
+UNICODE_PROBES = (
+    ("U+212A", "\u212a"),
+    ("U+FF21", "\uff21"),
+    ("U+0301", "e\u0301"),
+)
+
+
+def tierb_codepoints(s):
+    return " ".join("U+%04X" % ord(ch) for ch in s)
+
+
+def tierb_codepoint_names(s):
+    out = []
+    for ch in s:
+        try:
+            name = unicodedata.name(ch)
+        except ValueError:
+            name = "<unnamed>"
+        out.append("U+%04X %s" % (ord(ch), name))
+    return ", ".join(out)
+
+
+def tierb_folded_forms(value):
+    """Every normalized shape of value that is not the value itself, in the
+    order a server is most likely to have applied: NFKC, then the
+    precomposed form, then the fully decomposed one."""
+    forms = [("NFKC", unicodedata.normalize("NFKC", value))]
+    forms.append(("NFC", unicodedata.normalize("NFC",
+                                              unicodedata.normalize("NFD",
+                                                                    value))))
+    forms.append(("NFD", unicodedata.normalize("NFD", value)))
+    out, seen = [], set()
+    for how, form in forms:
+        if form != value and form not in seen:
+            seen.add(form)
+            out.append((how, form))
+    return out
+
+
+def tierb_with_param(url, param, value):
+    p = urllib.parse.urlsplit(url)
+    q = dict(kv.split("=", 1) if "=" in kv else (kv, "")
+             for kv in p.query.split("&") if kv)
+    q[param] = value
+    return urllib.parse.urlunsplit((p.scheme, p.netloc, p.path,
+                                    urllib.parse.urlencode(q, doseq=True),
+                                    p.fragment))
+
+
+def tierb_reflected_targets(bot, limit=4):
+    """(url, param) pairs whose original value really is reflected in the
+    crawled page.
+
+    A parameter that is swallowed by the server cannot leak a
+    normalization oracle, so probing it would spend the request cap for
+    nothing. The reflected ones are also the only ones where a folded
+    form is meaningful, because the baseline already contains the ASCII
+    letter a fold would produce.
+    """
+    out = []
+    for url in sorted(bot.params):
+        page = bot.pages.get(url)
+        if page is None:
+            continue
+        text = htmllib.unescape(page.text)
+        p = urllib.parse.urlsplit(url)
+        pairs = dict(kv.split("=", 1) if "=" in kv else (kv, "")
+                     for kv in p.query.split("&") if kv)
+        for name in bot.params[url]:
+            value = urllib.parse.unquote_plus(pairs.get(name, ""))
+            if not value or value not in text:
+                continue
+            out.append((url, name))
+            if len(out) >= limit:
+                return out
+    return out
+
+
+def check_unicode_oracles(bot):
+    """Send three confusable values to every reflected query parameter and
+    compare what came back against what was sent.
+
+    The oracle is not "is the value reflected", it is "is the stored form
+    the same as the sent form". A folded form is only interesting where
+    the page did not already contain it, so each candidate is checked
+    against the crawled baseline for that URL. Every value is inert and
+    sent once. Cap: 12 requests.
+    """
+    targets = tierb_reflected_targets(bot)
+    if not targets:
+        bot.add_anomaly(
+            "unicode-oracle", route=tierb_base(bot), probe_class="no-params",
+            note="no reflected query parameter was discovered, so no "
+                 "normalization oracle could be tested",
+            detail="crawl a page that reflects a query value (a search page "
+                   "will do) and re-run with --tierb")
+        return
+    sent = 0
+    for url, param in targets:
+        cached = bot.pages.get(url)
+        baseline = htmllib.unescape(cached.text) if cached is not None else None
+        if baseline is None:
+            neutral = tierb_with_param(url, param, "qxprobe")
+            base_r = bot.get(neutral)
+            sent += 1
+            bot.tierb["unicode_requests"] = sent
+            baseline = htmllib.unescape(base_r.text) if base_r else ""
+        for label, value in UNICODE_PROBES:
+            if sent >= TIERB_UNICODE_CAP:
+                bot.note("unicode oracle probes stopped at the %d request cap"
+                         % TIERB_UNICODE_CAP)
+                return
+            r = bot.get(tierb_with_param(url, param, value))
+            sent += 1
+            bot.tierb["unicode_requests"] = sent
+            if r is None:
+                continue
+            text = htmllib.unescape(r.text)
+            if value in text:
+                continue                      # stored exactly as sent
+            for how, form in tierb_folded_forms(value):
+                if form in baseline:
+                    continue                  # the page already had it
+                if form not in text:
+                    continue
+                bot.add_anomaly(
+                    "unicode-oracle", route=url, param=param,
+                    probe_class="%s/%s" % (label, how), canary_reflected=True,
+                    note="the server returned the %s form of the value "
+                         "instead of the bytes that were sent: sent %s, "
+                         "stored %s" % (how, tierb_codepoints(value),
+                                       tierb_codepoints(form)),
+                    detail="an identity comparison between the two forms "
+                           "would not match. sent: %s. stored: %s"
+                           % (tierb_codepoint_names(value),
+                              tierb_codepoint_names(form)),
+                    evidence="value=%r returned form=%r" % (value, form))
+                break
+
+
+# ---------- module 3: delimiter confusion ----------
+# ; . and %2e are the three a cache and an origin most often normalize
+# differently, and the fragment is the one that never belongs on the wire
+# at all. A status change is loud; two hops returning different bytes for
+# the same status is the cache-poisoning precondition. Cap: 10 requests.
+DELIMITER_VARIANTS = (
+    ("semicolon", ";"),
+    ("query", "?"),
+    ("fragment", "#"),
+    ("trailing-dot", "."),
+    ("encoded-dot", "%2e"),
+)
+
+
+def tierb_delimiter_baseline(bot):
+    forced = getattr(bot.args, "delimiter_path", None)
+    if forced:
+        path = forced if forced.startswith("/") else "/" + forced
+        url = bot.t.base + path
+        r = bot.pages.get(url) or bot.get(url)
+        return (url, urlsplit_path(url), r) if r is not None else (None, None, None)
+    for cand in sorted(bot.pages):
+        path = urlsplit_path(cand)
+        page = bot.pages.get(cand)
+        if path and "?" not in path and page is not None and page.status == 200:
+            return cand, path, page
+    url = tierb_base(bot)
+    r = bot.pages.get(url) or bot.get(url)
+    return (url, urlsplit_path(url), r) if r is not None else (None, None, None)
+
+
+def check_delimiter_confusion(bot):
+    """Append five delimiter variants to one crawled GET path and see
+    whether anything downstream still agrees on what the path is.
+
+    The delimiter goes on the wire exactly as written: a fragment quietly
+    stripped by the client library would test nothing at all.
+    """
+    url, path, base = tierb_delimiter_baseline(bot)
+    if not url or base is None:
+        bot.add_anomaly(
+            "delimiter-confusion", route=tierb_base(bot),
+            probe_class="no-baseline",
+            note="no crawled GET path had a baseline response, so no "
+                 "delimiter variant could be compared",
+            detail="crawl at least one 200 page first, or pass "
+                   "--delimiter-path PATH")
+        return
+    host = tierb_host_header(bot, url)
+    sent = 0
+    for name, delim in DELIMITER_VARIANTS:
+        if sent >= TIERB_DELIMITER_CAP:
+            bot.note("delimiter probes stopped at the %d request cap"
+                     % TIERB_DELIMITER_CAP)
+            break
+        raw = path + delim
+        responses = tierb_send(bot, url, [tierb_message("GET", raw, host)],
+                               "delimiter variant " + name)
+        sent += 1
+        bot.tierb["delimiter_requests"] = sent
+        if not responses:
+            continue
+        r = responses[0]
+        dist = tierb_distance(r.text, base.text)
+        same_status = r.status == base.status
+        if same_status and dist <= TIERB_BODY_DELTA:
+            continue
+        added, removed = tierb_header_delta(base, r)
+        bot.add_anomaly(
+            "delimiter-confusion", route=url, probe_class=name,
+            distance=round(dist, 3), status_delta=r.status - base.status,
+            headers_added=added, headers_removed=removed,
+            note=("%s: %r returned status %s against a baseline of %s, body "
+                  "distance %.2f" % (
+                      "cache and origin may disagree on the path"
+                      if same_status else
+                      "status changed for a delimited variant",
+                      raw, r.status, base.status, dist)),
+            evidence="baseline %r status %s %dB\nvariant %r status %s %dB"
+                     % (path, base.status, len(base.body), raw, r.status,
+                        len(r.body)))
+
+
+# ---------- module 4: documented API state walk ----------
+API_SPEC_PATHS = ("/openapi.json", "/swagger.json", "/api-docs",
+                  "/v3/api-docs", "/api/openapi.json")
+API_NEVER_SEND = ("delete", "put", "patch")
+
+
+def tierb_spec_paths(text):
+    try:
+        doc = json.loads(text)
+    except Exception:
+        return {}
+    if not isinstance(doc, dict):
+        return {}
+    paths = doc.get("paths")
+    return paths if isinstance(paths, dict) else {}
+
+
+def tierb_api_doc(bot, spend):
+    """The OpenAPI document: --api-spec first, then whatever exp-api-docs
+    already found this run, then the usual public locations."""
+    src = getattr(bot.args, "api_spec", None)
+    if src:
+        try:
+            with open(src, encoding="utf-8", errors="replace") as fh:
+                text = fh.read()
+        except OSError as e:
+            bot.note("--api-spec %s unreadable: %s" % (src, e))
+        else:
+            if tierb_spec_paths(text):
+                return text, "file:" + src
+            bot.note("--api-spec %s parsed but declares no paths" % src)
+    for url, text in sorted(bot.api_docs.items()):
+        if tierb_spec_paths(text):
+            return text, "discovered:" + url
+    for path in API_SPEC_PATHS:
+        spend()
+        r = bot.get(bot.t.base + path)
+        if r is not None and r.status == 200 and tierb_spec_paths(r.text):
+            return r.text, "fetched:" + path
+    return None, ""
+
+
+def tierb_iter_params(path_item, operation):
+    """Declared parameters for a path template, path level first."""
+    out = []
+    for src in (path_item if isinstance(path_item, dict) else {},):
+        if isinstance(src.get("parameters"), list):
+            out.extend(p for p in src["parameters"] if isinstance(p, dict))
+    op = (path_item or {}).get(operation) or {}
+    if isinstance(op.get("parameters"), list):
+        out.extend(p for p in op["parameters"] if isinstance(p, dict))
+    return out
+
+
+def tierb_inert_value(bot, path_item, operation):
+    """Exactly ONE inert value per documented path.
+
+    The candidates are ordered by how likely they are to name an object
+    that really exists, because a differential only shows up when one
+    does: 0 for an unconstrained integer, 1 when the spec sets a minimum
+    above 0, and an inert canary string for anything non-numeric.
+    """
+    schema = {}
+    for p in tierb_iter_params(path_item, operation):
+        if isinstance(p.get("schema"), dict):
+            schema = p["schema"]
+            break
+    if str(schema.get("type", "")).lower() in ("integer", "number"):
+        try:
+            if float(schema.get("minimum", 0)) >= 1:
+                return "1"
+        except (TypeError, ValueError):
+            pass
+        return "0"
+    return bot.canary + "z"
+
+
+def tierb_fill(tpl, value):
+    return re.sub(r"\{[^}]+\}",
+                  lambda _m: urllib.parse.quote(value, safe=""), tpl)
+
+
+def tierb_dummy_body(path_item, operation):
+    """Scanner-owned dummy values only: never anything lifted from the
+    target, never anything that could create a real record."""
+    op = (path_item or {}).get(operation) or {}
+    content = ((op.get("requestBody") or {}).get("content") or {})
+    for _ct, media in content.items():
+        schema = ((media or {}).get("schema") or {})
+        props = schema.get("properties")
+        if isinstance(props, dict):
+            return {name: "QX-probe-dummy" for name in list(props)[:10]}
+        return {"probe": "QX-probe-dummy"}
+    return {"probe": "QX-probe-dummy"}
+
+
+def check_api_states(bot):
+    """Walk the documented object paths the way an unauthenticated caller
+    would and report any authorization differential as an anomaly.
+
+    One inert value per path, never DELETE, PUT or PATCH, and POST only
+    when the spec marks the operation and --allow-spec-post was given,
+    with a body of scanner-owned dummy values. A single anonymous read
+    that differs from the collection baseline is NOT a proven BOLA:
+    confirming it needs a second owner-provided account, so it stays an
+    anomaly at medium confidence. Cap: 30 requests.
+    """
+    used = [0]
+
+    def spend():
+        used[0] += 1
+
+    text, source = tierb_api_doc(bot, spend)
+    bot.tierb["api_spec_source"] = source
+    bot.tierb["api_state_requests"] = used[0]
+    paths = tierb_spec_paths(text or "")
+    templates = sorted(p for p in paths
+                       if isinstance(p, str) and "{" in p and "}" in p)
+    if not templates:
+        bot.add_anomaly(
+            "api-state-authz", route=tierb_base(bot), probe_class="no-spec",
+            note="no OpenAPI document declaring {param} paths was available, "
+                 "so no authorization differential could be tested",
+            detail="spec source: %s. pass --api-spec FILE, or publish the "
+                   "document (an exposed spec is itself the finding "
+                   "exp-api-docs)" % (source or "none"))
+        return
+
+    baselines = {}
+
+    def collection(tpl):
+        coll = re.sub(r"\{[^}]+\}", "", tpl).rstrip("/") or "/"
+        if coll not in baselines:
+            url = bot.t.base + coll
+            r = bot.pages.get(url)
+            if r is None:
+                spend()
+                r = bot.get(url)
+            baselines[coll] = r
+        return baselines[coll]
+
+    for tpl in templates:
+        if used[0] >= TIERB_API_CAP:
+            bot.note("api state walk stopped at the %d request cap"
+                     % TIERB_API_CAP)
+            break
+        item = paths[tpl] if isinstance(paths[tpl], dict) else {}
+        ops = [k for k in item
+               if isinstance(k, str) and k.lower() not in API_NEVER_SEND
+               and k.lower() not in ("parameters", "$ref", "summary",
+                                     "description", "servers")]
+        plans = ["get"] if "get" in [o.lower() for o in ops] else []
+        if ("post" in [o.lower() for o in ops]
+                and getattr(bot.args, "allow_spec_post", False)):
+            plans.append("post")
+        for operation in plans:
+            if used[0] >= TIERB_API_CAP:
+                break
+            method = operation.upper()
+            if method not in ("GET", "POST"):
+                continue                  # belt and braces: nothing else ships
+            value = tierb_inert_value(bot, item, operation)
+            item_path = tierb_fill(tpl, value)
+            url = bot.t.base + item_path
+            host = tierb_host_header(bot, url)
+            headers = {"Accept": "application/json"}
+            body = None
+            if method == "POST":
+                headers["Content-Type"] = "application/json"
+                headers["Content-Length"] = str(
+                    len(json.dumps(tierb_dummy_body(item, operation))))
+                body = json.dumps(tierb_dummy_body(item, operation))
+            responses = tierb_send(
+                bot, url, [tierb_message(method, item_path, host, headers,
+                                         body)], "api state " + method,
+                method)
+            used[0] += 1
+            bot.tierb["api_state_requests"] = used[0]
+            if not responses:
+                continue
+            r = responses[0]
+            # a refusal is a refusal, not a leak: 401/403/404, a redirect
+            # to a login page, or a server error tells us nothing either way
+            if r.status in (401, 403, 404) or r.status >= 300:
+                continue
+            base = collection(tpl)
+            bot.tierb["api_state_requests"] = used[0]
+            base_status = base.status if base is not None else 0
+            base_text = base.text if base is not None else ""
+            dist = tierb_distance(r.text, base_text)
+            if r.status == base_status and dist <= TIERB_BODY_DELTA:
+                continue
+            if not r.body.strip() or r.body.strip() in (b"[]", b"{}"):
+                continue                  # an empty collection, not an object
+            bot.add_anomaly(
+                "api-state-authz", route=url, param=value, confidence="medium",
+                probe_class="%s %s" % (method, tpl),
+                distance=round(dist, 3),
+                status_delta=r.status - base_status,
+                canary_reflected=True,
+                note="an unauthenticated %s of one object answered %s with "
+                     "%dB while the anonymous collection baseline answered "
+                     "%s (body distance %.2f); not a proven BOLA, needs a "
+                     "second owner-provided account to confirm"
+                     % (method, r.status, len(r.body), base_status, dist),
+                detail="the differential is against %s, the collection path "
+                       "for %s. A single anonymous read cannot separate "
+                       "'public by design' from 'someone else's object', so "
+                       "this stays an anomaly until a second owner-provided "
+                       "account is in the test plan" % (urlsplit_path(
+                           re.sub(r"\{[^}]+\}", "", tpl).rstrip("/") or "/"),
+                           tpl),
+                evidence="value=%r status=%s %dB\n%s"
+                         % (value, r.status, len(r.body), r.text[:400]))
+# Tier A anomaly engine (Red Queen v2.0).
+#
+# THE RULE: an anomaly is NOT a vulnerability. Every record this module builds
+# goes into bot.anomalies and nowhere else. It never touches bot.findings, so
+# counts(), score(), verify_findings() and the exit code cannot see it. The
+# only thing an anomaly asks for is a human reading it.
+
+ANOMALY_BANNER = "INTERESTING, NOT A VULNERABILITY: needs human review."
+ANOMALY_NOISE_FLOOR = 0.15     # body match above this with no canary echo = noise
+ANOMALY_PROBES_PER_ROUTE = 9  # hard cap, prompt 2 step 2
+ANOMALY_REQUEST_BUDGET = 120   # hard cap for the whole engine, prompt 2 step 2
+ANOMALY_CAP_MAX = 20           # --anomaly-cap ceiling, prompt 2 step 6
+ANOMALY_CANARY_RE = re.compile(r"QX[a-f0-9]+")
+ANOMALY_CANARY_TOK = "QXCANARY"
+ANOMALY_HOST_SUFFIX = ".qx-probe.invalid"
+ANOMALY_HEADERS = ("X-Forwarded-Host", "X-Original-URL", "X-Rewrite-URL")
+ANOMALY_SUFFIXES = (".css", ".png", ".js")
+ANOMALY_METHODS = ("HEAD", "OPTIONS")
+
+
+def anomaly_norm(text):
+    """Body normalization for fingerprinting and matching: canaries to one
+    fixed token, then the shared norm() (digit runs of 3+ and whitespace runs
+    collapsed). Runs before norm() so a random canary cannot inflate the
+    distance on its own."""
+    return norm(ANOMALY_CANARY_RE.sub(ANOMALY_CANARY_TOK, text or ""))
+
+
+def anomaly_header_names(resp):
+    """Response header names as a set. set-cookie-list is our own transport
+    bookkeeping, not a header the server sent."""
+    return {k for k in resp.headers if k != "set-cookie-list"}
+
+
+def anomaly_not_found(bot, resp):
+    """Is this response the site-wide not-found shape? Prefers the R2
+    Calibration profile when that release is present, falls back to the v1.1.0
+    soft-404 probe. Both mean the same thing here: a difference against this
+    shape is routing noise, never a signal."""
+    cal = getattr(bot, "calibration", None)
+    if cal is not None and hasattr(cal, "is_not_found"):
+        try:
+            return bool(cal.is_not_found(resp))
+        except BudgetExceeded:
+            raise
+        except Exception:
+            pass
+    try:
+        return bool(is_soft404(bot, resp))
+    except BudgetExceeded:
+        raise
+    except Exception:
+        return False
+
+
+def anomaly_routes(bot):
+    """Crawled routes worth probing, target first, then crawl order, capped so
+    that cap-per-route x routes stays inside the engine request budget."""
+    base = bot.t.base + bot.t.path
+    order = []
+    if base in bot.pages:
+        order.append(base)
+    order += [u for u in bot.pages if u != base]
+    room = max(1, ANOMALY_REQUEST_BUDGET // ANOMALY_PROBES_PER_ROUTE)
+    return order[:room]
+
+
+def anomaly_baseline(bot, route):
+    """Per-route baseline record, taken from the response the crawl already
+    holds, so building it costs zero requests."""
+    r = bot.pages.get(route)
+    if r is None:
+        return None
+    body = anomaly_norm(r.text)
+    return {"route": route, "status": r.status, "length": len(r.body),
+            "headers": sorted(anomaly_header_names(r)),
+            "header_set": anomaly_header_names(r),
+            "content_type": r.header("content-type"),
+            "body_fp": hashlib.sha256(body.encode("utf-8", "replace")).hexdigest(),
+            "body": body, "resp": r}
+
+
+def anomaly_probes(route, canary, rotation=0, cap=ANOMALY_PROBES_PER_ROUTE):
+    """Probe shapes for one route, in the five classes of the contract:
+    header canary, path suffix, path delimiter, method variant, accept
+    variant. GET-safe methods only (GET, HEAD, OPTIONS), never a body.
+
+    Every probe carries the per-run canary so canary_reflected means something
+    for all five classes: in the header value for class a, as a benign
+    qxcanary query parameter for the rest (the path shape stays exactly as
+    specified).
+
+    A route may cost at most `cap` requests, and the five classes hold 13
+    shapes, so the plan is class balanced: every class offers its first
+    variant, then its second, and so on. The rotation shifts each class by the
+    route index, so a crawl of several routes exercises all 13 shapes instead
+    of starving the tail classes forever.
+    """
+    p = urllib.parse.urlsplit(route)
+    path = p.path or "/"
+    host = canary + ANOMALY_HOST_SUFFIX
+
+    def build(new_path):
+        q = p.query
+        q = (q + "&" if q else "") + "qxcanary=" + canary
+        return urllib.parse.urlunsplit((p.scheme, p.netloc, new_path, q, ""))
+
+    def rot(items, n):
+        n = n % len(items)
+        return items[n:] + items[:n]
+
+    header = [{"probe_class": "header-canary", "variant": h, "method": "GET",
+               "url": build(path), "headers": {h: host}}
+              for h in ANOMALY_HEADERS]
+    suffix = [{"probe_class": "path-suffix", "variant": s, "method": "GET",
+               "url": build(path + s), "headers": {}}
+              for s in ANOMALY_SUFFIXES]
+    # a bare "?" cannot be the last byte of a path (the request line would read
+    # it as the query separator), so the trailing question mark goes out
+    # percent-encoded and stays a real path byte.
+    delimiter = [{"probe_class": "delimiter", "variant": label, "method": "GET",
+                  "url": build(path + tail), "headers": {}}
+                 for label, tail in (("trailing semicolon", ";"),
+                                     ("trailing question mark", "%3f"),
+                                     ("trailing dot", "."),
+                                     ("percent-encoded dot segment", "/%2e"))]
+    method = [{"probe_class": "method", "variant": m, "method": m,
+               "url": build(path), "headers": {}}
+              for m in ANOMALY_METHODS]
+    accept = [{"probe_class": "accept", "variant": "text/plain", "method": "GET",
+               "url": build(path), "headers": {"Accept": "text/plain"}}]
+    groups = [rot(g, rotation) for g in (header, suffix, delimiter, method,
+                                         accept)]
+    plan, i = [], 0
+    while len(plan) < cap:
+        added = False
+        for g in groups:
+            if i < len(g):
+                plan.append(g[i])
+                added = True
+                if len(plan) >= cap:
+                    break
+        if not added:
+            break
+        i += 1
+    return plan
+
+
+def anomaly_probe(bot, route, base, probe, canary, keep_all=False):
+    """Run one probe and turn it into a record, or None when the filter says
+    the response is noise."""
+    r = bot.get(probe["url"], headers=probe["headers"] or None,
+                method=probe["method"], follow=True)
+    if r is None:
+        return None
+    if anomaly_not_found(bot, r):
+        return None
+    ratio = difflib.SequenceMatcher(None, anomaly_norm(r.text),
+                                    base["body"]).ratio()
+    distance = round(ratio, 3)
+    names = anomaly_header_names(r)
+    reflected = (canary in r.text
+                 or any(canary in str(v) for v in r.headers.values()))
+    added = sorted(names - base["header_set"])
+    removed = sorted(base["header_set"] - names)
+    delta = r.status - base["status"]
+    bodyless = not r.body
+    if not keep_all and not reflected:
+        if distance > ANOMALY_NOISE_FLOOR:
+            return None          # body still matches the baseline, nothing echoed
+        if bodyless and delta == 0 and not added and not removed:
+            # a HEAD (or empty) response has no body to match, so the only
+            # remaining evidence is status and headers, and neither moved
+            return None
+    in_body = canary in r.text
+    in_hdr = any(canary in str(v) for v in r.headers.values())
+    echo = "body and headers" if (in_body and in_hdr) else \
+        ("body" if in_body else "headers")
+    match = ("no body to compare" if bodyless
+             else f"body match {distance} against baseline")
+    note = (f"{probe['variant']} probe: status {r.status} against baseline "
+            f"{base['status']} (delta {delta:+d}), {match}, headers "
+            f"+{len(added)}/-{len(removed)}, "
+            + (f"canary echoed in {echo}" if reflected else "no canary echo")
+            + f". {ANOMALY_BANNER}")
+    return {"route": route, "probe_class": probe["probe_class"],
+            "distance": distance, "status_delta": delta,
+            "headers_added": added, "headers_removed": removed,
+            "canary_reflected": reflected, "note": note,
+            "confidence": "low", "text": ANOMALY_BANNER}
+
+
+def check_anomaly(bot):
+    """Tier A differential engine. One baseline per crawled route, a capped
+    set of read-only probes per route, a body match plus header set difference
+    per probe, then filter, rank and cap. Findings stay untouched."""
+    cap = max(0, min(int(getattr(bot.args, "anomaly_cap", 5) or 0),
+                     ANOMALY_CAP_MAX))
+    keep_all = bool(getattr(bot.args, "anomaly_keep_all", False))
+    canary = bot.canary
+    start_used = bot.t.used
+
+    def spent():
+        return bot.t.used - start_used
+
+    try:
+        for n, route in enumerate(anomaly_routes(bot)):
+            if spent() >= ANOMALY_REQUEST_BUDGET:
+                bot.note(f"anomaly engine stopped at its {ANOMALY_REQUEST_BUDGET} "
+                         f"request budget after {len(bot.anomaly_routes)} routes")
+                break
+            base = anomaly_baseline(bot, route)
+            if base is None:
+                continue
+            recs, sent, dropped = [], 0, 0
+            for probe in anomaly_probes(route, canary, n):
+                if spent() >= ANOMALY_REQUEST_BUDGET:
+                    bot.note(f"anomaly engine hit its {ANOMALY_REQUEST_BUDGET} "
+                             f"request budget on {route}")
+                    break
+                sent += 1
+                rec = anomaly_probe(bot, route, base, probe, canary, keep_all)
+                if rec is None:
+                    dropped += 1
+                else:
+                    recs.append(rec)
+            # rank ascending by body match, so the responses that drifted
+            # furthest from the baseline come first
+            kept = sorted(recs, key=lambda r: (r["distance"], r["probe_class"]))[:cap]
+            bot.anomalies.extend(kept)
+            bot.anomaly_routes.append(
+                {"route": route, "status": base["status"],
+                 "length": base["length"], "headers": base["headers"],
+                 "content_type": base["content_type"],
+                 "body_fp": base["body_fp"], "probes": sent,
+                 "filtered": dropped, "anomalies": len(kept)})
+    finally:
+        for rec in (bot.anomalies or []):
+            rec.setdefault("tier", "A")
+        bot.anomaly_requests = spent()
+    bot.recon.append(("anomaly probes", f"{bot.anomaly_requests} requests, "
+                        f"{len(bot.anomalies)} anomalies kept"))
+    bot.note("anomaly engine: records are review material only, they are not "
+             "findings and never move the score, the counts or the exit code")
+
 
 SEV_GLYPH = {"CRITICAL": "✖", "HIGH": "▲", "MEDIUM": "●", "LOW": "○", "INFO": "•"}
 ANSI = {"CRITICAL": "\033[1;91m", "HIGH": "\033[91m", "MEDIUM": "\033[93m",
@@ -1773,7 +3393,7 @@ def terminal_report(bot, use_color):
                f"budget {'EXHAUSTED' if bot.stopped else 'ok'}   "
                f"rate-limit responses {bot.t.rate_limited}")
     out.append("")
-    shown = sorted(bot.findings, key=lambda f: (SEV_ORDER[f["severity"]],
+    shown = sorted(bot.scored(), key=lambda f: (SEV_ORDER[f["severity"]],
                                                 f["check_id"]))
     if not shown:
         out.append("  ✓ nothing to report. Move to manual and business-logic tests.")
@@ -1797,6 +3417,22 @@ def terminal_report(bot, use_color):
         out.append(colorize("  FIX FIRST (in this order)", "bold", c))
         for i, f in enumerate(top, 1):
             out.append(f"   {i}. {f['fix'][:110]}")
+    ev = bot.evidence_records()
+    if ev:
+        out.append("")
+        out.append(colorize("  EVIDENCE RECORDS (not scored, not counted)",
+                            "dim", c))
+        for f in ev:
+            out.append(colorize(f"   · {f['check_id']} [{f['param'] or ''}] "
+                                f"{f['evidence'][:96]}", "dim", c))
+    out.append("")
+    out.extend(scan_quality_lines(bot, c))
+    st = bot.auth_state.get("state", "not-checked")
+    out.append("    auth  " + colorize(st, "green" if st == "verified"
+                                       else "MEDIUM", c) + ": " +
+               (bot.auth_state.get("reason") or "no auth verdict this run"))
+    cov = coverage_statement(bot)
+    out.append("    " + colorize(coverage_line(bot, cov), "dim", c))
     if bot.stopped:
         out.append(colorize(f"\n  ! scan stopped early: {bot.stopped}", "MEDIUM", c))
     return "\n".join(out)
@@ -1811,7 +3447,7 @@ def write_checklist(bot, out_dir):
              f"{counts['INFO']} info", "",
              "Work top to bottom. Re-run the bot after each fix and watch the "
              "score move.", ""]
-    order = sorted(bot.findings, key=lambda f: (SEV_ORDER[f["severity"]],
+    order = sorted(bot.scored(), key=lambda f: (SEV_ORDER[f["severity"]],
                                                 f["check_id"]))
     cur = None
     for f in order:
@@ -1827,7 +3463,96 @@ def write_checklist(bot, out_dir):
     return path
 
 
+# R2 coverage accounting. NEVER_TESTED is static and deliberate: these
+# vulnerability classes are out of scope for an automated pass, and saying
+# so out loud is more honest than a green tick.
+NEVER_TESTED = [
+    {"class": "DoS and resource exhaustion",
+     "reason": "no denial-of-service testing at all: a bot that hammers a "
+               "host is indistinguishable from an attack"},
+    {"class": "API6 sensitive business flows",
+     "reason": "workflow logic (payments, refunds, limits, state machines) "
+               "needs a human who knows the intended business rules"},
+    {"class": "DOM and browser-only XSS",
+     "reason": "no JavaScript engine here: DOM sinks, prototype pollution and "
+               "client-side storage need a real browser session"},
+    {"class": "request smuggling escalation",
+     "reason": "only the detection half is in scope; storing a poisoned "
+               "response or poisoning a response queue would mutate shared "
+               "infrastructure and can affect other users"},
+    {"class": "cross-account mutation",
+     "reason": "proving cross-account access needs two owner-provided "
+               "accounts, and the bot only ever has anonymous plus at most "
+               "one --cookie identity"},
+    {"class": "HTTP/2 CONTINUATION flood and Rapid Reset",
+     "reason": "these are availability attacks by construction; active "
+               "probing is refused, and http.client cannot speak HTTP/2"},
+]
+# checks that a scenario can nominally run but that can never fire on this
+# target shape. Used as the reason string when coverage says not tested.
+NOT_TESTED_CONDITION = {
+    "no-tls": "only observable on an http:// target",
+    "hdr-hsts": "only observable on an https:// target",
+    "cookie-secure": "only observable on an https:// target",
+    "cookie-plaintext": "only observable on an http:// target",
+    "tls-legacy": "needs a TLS endpoint to downgrade",
+    "tls-expiry": "needs a TLS endpoint",
+    "tls-unverified": "needs a TLS endpoint",
+    "mixed-content": "only observable on an https:// target",
+    "subdomain-dangling": "only runs with --ct-log",
+}
+
+
+def coverage_statement(bot):
+    """One row per check id in CHECKS: was it exercised this run, and if not,
+    why not. Exercised means it fired, or its group is part of the scenario
+    and therefore ran (and found nothing)."""
+    fired = bot.fired_check_ids()
+    if getattr(bot, "replayed", False):
+        scope = set(PASSIVE_SCOPE)
+    else:
+        scope = set()
+        for group in SCENARIOS.get(bot.args.scenario, []):
+            scope.update(GROUPS.get(group, []))
+    rows = []
+    for cid in sorted(CHECKS):
+        owasp, sev, title, _impact, _fix = CHECKS[cid]
+        tested = cid in fired or cid in scope
+        if tested:
+            reason = ""
+        elif cid in NOT_TESTED_CONDITION:
+            reason = NOT_TESTED_CONDITION[cid]
+        else:
+            reason = (f"not exercised by scenario '{bot.args.scenario}'"
+                      if not getattr(bot, "replayed", False)
+                      else "not exercised: a passive replay only runs the "
+                           "response-only checks")
+        rows.append({"check_id": cid, "owasp": owasp, "severity": sev,
+                     "title": title, "tested": tested, "reason": reason})
+    return rows
+
+
+def coverage_line(bot, rows):
+    done = sum(1 for r in rows if r["tested"])
+    return (f"coverage: {done}/{len(rows)} checks exercised, "
+            f"{len(NEVER_TESTED)} classes never tested by design")
+
+
+def scan_quality_lines(bot, use_color):
+    """Terminal SCAN QUALITY block."""
+    out = [colorize("  SCAN QUALITY", "bold", use_color)]
+    if not bot.warnings:
+        out.append("    " + colorize("ok  no scan-quality warnings",
+                                     "green", use_color))
+        return out
+    for w in bot.warnings:
+        out.append("    " + colorize("!", "MEDIUM", use_color) + " " +
+                   f"{w['code']:<22} {w['message']}")
+    return out
+
+
 def json_report(bot):
+    coverage = coverage_statement(bot)
     return json.dumps({
         "tool": {"name": "redteam.py", "version": VERSION},
         "target": bot.t.base + bot.t.path,
@@ -1841,13 +3566,442 @@ def json_report(bot):
         "score": bot.score(),
         "counts": bot.counts(),
         "recon": bot.recon,
+        "calibration": bot.calibration.profile(),
+        "auth_state": bot.auth_state,
+        "passive": {"replay": bool(getattr(bot, "replayed", False)),
+                    "requests_used": bot.t.used,
+                    "zero_requests": bot.t.used == 0,
+                    "responses_replayed": len(bot.pages) if
+                    getattr(bot, "replayed", False) else 0},
+        "warnings": bot.warnings,
+        "degraded_checks": bot.degraded,
+        "coverage": coverage,
+        "coverage_summary": coverage_line(bot, coverage),
+        "never_tested": NEVER_TESTED,
         "notes": bot.notes,
         "findings": bot.findings,
+        "evidence_records": [{"id": f["id"], "check_id": f["check_id"],
+                              "url": f["url"], "param": f["param"],
+                              "evidence": f["evidence"]}
+                             for f in bot.evidence_records()],
         "endpoints": sorted(bot.endpoints),
         "js_assets": sorted(bot.js_assets),
         "checks_available": len(CHECKS),
-        "checks_fired": sorted({f["check_id"] for f in bot.findings}),
+        "checks_fired": sorted(bot.fired_check_ids()),
+        # Tier A + C output. Anomalies are review material, never findings,
+        # so they are reported in their own key and counted in nothing.
+        "anomalies": getattr(bot, "anomalies", []) or [],
+        "anomaly_requests": getattr(bot, "anomaly_requests", 0),
+        "anomaly_routes": getattr(bot, "anomaly_routes", []) or [],
+        "tierc": getattr(bot, "tierc", []) or [],
+        "tierb": dict(getattr(bot, "tierb", {}) or {}),
     }, indent=2)
+
+
+# Tier C: human-in-the-loop research pipeline.
+# This module never sends a request. It turns anomalies and hand-written
+# candidates into dossiers a human can act on, and it enforces the rails
+# mechanically: a candidate that needs a destructive action is marked
+# OUT OF SCOPE and gets no repro template.
+
+TIERC_MAX_REQUESTS = 8
+TIERC_SAFE_METHODS = ("GET", "HEAD", "OPTIONS", "POST")
+TIERC_DESTRUCTIVE = ("DELETE", "PUT", "PATCH")
+TIERC_METADATA = "169.254.169.254"
+TIERC_CANARY_RE = re.compile(r"QX[0-9a-f]{4,}")
+TIERC_FLOOD_RE = re.compile(
+    r"(?i)(flood|denial[\s-]of[\s-]service|\bdos\b|slowloris|amplif\w+|"
+    r"concurren\w*|parallel requests|many requests at once|rapid reset|"
+    r"keep[\s-]?alive (storm|abuse)|pummel|pound|threaded for)")
+
+# a body value the scanner itself invented: canaries, the literal CANARY
+# placeholder, inert counters, and the dummy login the rate-limit check uses
+TIERC_OWNED_VALUE = re.compile(
+    r"^(QX[0-9a-f]{2,}|CANARY|0|1|true|false|null|none|test|dummy|inert"
+    r"|qx_[a-z0-9_@.]*|qx\.[a-z0-9_@.]+|definitelynotarealpass!1)$", re.I)
+
+
+def tierc_mask(text):
+    """Mask every secret pattern the auth module knows, then key=value
+    secrets. Dossiers are written to disk and pasted into tickets, so a
+    raw secret must never survive the trip."""
+    out = str(text or "")
+    for _name, rx, _sev in SECRET_RES:
+        out = rx.sub(lambda m: mask_token(m.group(0)), out)
+    out = SECRET_RE.sub(lambda m: m.group(1) + "=***REDACTED***", out)
+    return out
+
+
+def tierc_canary(text):
+    """Swap the run-unique canary for a literal placeholder so the repro
+    template is inert as written."""
+    return TIERC_CANARY_RE.sub("CANARY", str(text or ""))
+
+
+def tierc_safe_id(raw):
+    cid = re.sub(r"[^A-Za-z0-9._-]+", "-", str(raw or "")).strip("-")
+    return cid or "UNNAMED"
+
+
+def _body_owned(body):
+    """True when every value in the body is a scanner-owned inert value.
+    A body the operator would have to fill with real data is not a repro
+    template, it is a destructive action waiting to happen."""
+    b = str(body or "").strip()
+    if not b:
+        return True, ""
+    if b[0] in "{[":
+        try:
+            parsed = json.loads(b)
+        except Exception:
+            return False, "body looks like JSON but does not parse, ownership unverifiable"
+        vals = []
+
+        def walk(node):
+            if isinstance(node, dict):
+                for v in node.values():
+                    walk(v)
+            elif isinstance(node, (list, tuple)):
+                for v in node:
+                    walk(v)
+            else:
+                vals.append(str(node))
+
+        walk(parsed)
+    elif "=" in b:
+        vals = [kv.split("=", 1)[1] for kv in b.split("&") if "=" in kv]
+    else:
+        vals = [b]
+    for v in vals:
+        if not TIERC_OWNED_VALUE.match(v.strip()):
+            return False, f"body value {v[:40]!r} is not scanner-owned"
+    return True, ""
+
+
+def tierc_rails(candidate):
+    """Read the candidate and decide whether documenting it is inside the
+    rails. Returns (out_of_scope, [(rail, detail), ...])."""
+    repro = candidate.get("repro") or []
+    if not isinstance(repro, list):
+        return True, [("malformed", "repro is not a list of requests")]
+    hits = []
+
+    if len(repro) > TIERC_MAX_REQUESTS:
+        hits.append(("request-count",
+                     f"{len(repro)} requests, cap is {TIERC_MAX_REQUESTS}"))
+
+    for i, req in enumerate(repro, 1):
+        if not isinstance(req, dict):
+            hits.append(("malformed", f"repro[{i}] is not an object"))
+            continue
+        method = str(req.get("method") or "GET").strip().upper()
+        url = str(req.get("url") or "")
+        body = req.get("body")
+        headers = req.get("headers") or {}
+        if method not in TIERC_SAFE_METHODS:
+            why = ("destructive method" if method in TIERC_DESTRUCTIVE
+                   else "method outside the scanner allowlist")
+            hits.append(("destructive-method",
+                         f"request {i} uses {method} ({why})"))
+        if TIERC_METADATA in url:
+            hits.append(("cloud-metadata",
+                         f"request {i} targets the cloud metadata service"))
+        haystack = " ".join([url, str(body or "")] +
+                            [f"{k}: {v}" for k, v in (headers.items()
+                                                       if isinstance(headers, dict)
+                                                       else [])] +
+                            [str(req.get(k) or "")
+                             for k in ("notes", "intent", "description")] +
+                            [str(candidate.get("notes") or "")])
+        fm = TIERC_FLOOD_RE.search(haystack)
+        if fm:
+            hits.append(("flood-or-concurrency",
+                         f"request {i} hints at load or concurrency ({fm.group(0)})"))
+        ok, why = _body_owned(body)
+        if not ok:
+            hits.append(("non-scanner-owned-body",
+                         f"request {i}: {why}"))
+
+    return bool(hits), hits
+
+
+def _evidence_rows(candidate):
+    """Every anomaly record or raw excerpt that supports the hypothesis,
+    with secrets masked. Returns a list of (source, excerpt) pairs."""
+    rows = []
+    anom = candidate.get("anomaly")
+    if isinstance(anom, dict):
+        src = anom.get("route") or candidate.get("url") or "anomaly record"
+        for k in ("probe_class", "distance", "status_delta", "headers_added",
+                  "headers_removed", "canary_reflected", "note"):
+            if k in anom:
+                rows.append((f"{src} :: {k}", anom[k]))
+        if not rows:
+            rows.append((src, json.dumps(anom, sort_keys=True)))
+    for ev in candidate.get("evidence") or []:
+        if isinstance(ev, dict):
+            rows.append((str(ev.get("source") or "excerpt"),
+                         ev.get("excerpt", "")))
+        else:
+            rows.append(("excerpt", ev))
+    if not rows:
+        for i, req in enumerate(candidate.get("repro") or [], 1):
+            if isinstance(req, dict):
+                rows.append((f"request {i}",
+                             f"{str(req.get('method') or 'GET').upper()} "
+                             f"{req.get('url', '')}"))
+    return [(tierc_canary(tierc_mask(s)), tierc_canary(tierc_mask(str(x))))
+            for s, x in rows]
+
+
+def _repro_block(candidate):
+    """The exact request shape that produced the anomaly, canary swapped for
+    the literal placeholder CANARY. Documentation only, never sent."""
+    lines = ["## 4. Minimal repro template", "",
+             "Run this ONLY on your own staging environment, never against "
+             "production and never against a system you do not own.", ""]
+    for i, req in enumerate(candidate.get("repro") or [], 1):
+        if not isinstance(req, dict):
+            continue
+        method = str(req.get("method") or "GET").strip().upper()
+        url = str(req.get("url") or "")
+        lines.append(f"### request {i}: {method}")
+        lines.append("")
+        lines.append("```http")
+        lines.append(f"{method} {tierc_canary(url)} HTTP/1.1")
+        host = urllib.parse.urlsplit(url).netloc or "placeholder_website"
+        lines.append(f"Host: {host}")
+        lines.append("User-Agent: <your own agent string>")
+        headers = req.get("headers") or {}
+        if isinstance(headers, dict):
+            for k, v in headers.items():
+                lines.append(f"{k}: {tierc_canary(tierc_mask(v))}")
+        body = req.get("body")
+        if body:
+            lines.append("")
+            lines.append(tierc_canary(tierc_mask(body)))
+        lines.append("```")
+        lines.append("")
+    lines.append("CANARY is a literal placeholder. Substitute your own unique "
+                 "marker so a response reflection is unambiguous.")
+    lines.append("")
+    return lines
+
+
+def tierc_dossier(bot, candidate):
+    """Write research/CANDIDATE-<id>.md and return the path written."""
+    out_dir = getattr(bot.args, "tierc_dir", None) or "research"
+    os.makedirs(out_dir, exist_ok=True)
+    cid = tierc_safe_id(candidate.get("id"))
+    path = os.path.join(out_dir, f"CANDIDATE-{cid}.md")
+
+    title = str(candidate.get("title") or cid)
+    tier = str(candidate.get("tier") or "").strip().upper()
+    if candidate.get("source") == "anomaly":
+        source = f"Tier {tier or 'A'} anomaly"
+        anom = candidate.get("anomaly") or {}
+        if anom.get("route"):
+            source += f" on route {anom['route']}"
+    else:
+        source = "hand-written candidate file"
+
+    out_of_scope, hits = tierc_rails(candidate)
+    verdict = "OUT OF SCOPE" if out_of_scope else "IN SCOPE"
+    now = datetime.now(timezone.utc)
+    target = ""
+    try:
+        target = bot.t.base + bot.t.path
+    except Exception:
+        target = ""
+
+    L = []
+    # 1. header
+    L += [f"# CANDIDATE {cid}: {title}", "",
+          f"> **{verdict}**" if out_of_scope else
+          f"> rails verdict: {verdict}", "",
+          "| field | value |", "|---|---|",
+          f"| candidate id | `{cid}` |",
+          f"| title | {tierc_mask(title)} |",
+          f"| date | {now.strftime('%Y-%m-%d')} ({now.strftime('%H:%M:%SZ')}) |",
+          f"| source | {source} |",
+          f"| rails verdict | {verdict} |",
+          f"| out of scope | {'yes' if out_of_scope else 'no'} |",
+          f"| requests executed by redteam.py for this dossier | 0 |"]
+    if target:
+        L.append(f"| scan target | {target} |")
+    L.append("")
+
+    # 2. hypothesis
+    hyp = str(candidate.get("hypothesis") or "").strip()
+    if not hyp:
+        hyp = ("No hypothesis recorded yet. Write one sentence naming the "
+               "mechanism you believe is present and the observation that "
+               "made you believe it.")
+    L += ["## 2. Hypothesis", "", tierc_mask(tierc_canary(hyp)), "",
+          "This is a hypothesis, not a proven impact. Nothing in this dossier "
+          "has been exploited or confirmed on production.", ""]
+
+    # 3. evidence
+    L += ["## 3. Evidence", "",
+          "Raw values are masked with the same routine the scanner uses for "
+          "findings. A value that looks like a secret here is redacted, not "
+          "collected.", "",
+          "| # | source | excerpt |", "|---|---|---|"]
+    rows = _evidence_rows(candidate)
+    for i, (src, excerpt) in enumerate(rows, 1):
+        L.append(f"| {i} | {src} | `{str(excerpt)[:300]}` |")
+    if not rows:
+        L.append("| 1 | none | no evidence captured yet |")
+    L.append("")
+
+    # 4. minimal repro: written only when the rails allow it. When they do
+    # not, the section is absent entirely, not present and empty.
+    if not out_of_scope:
+        L += _repro_block(candidate)
+
+    # 5. impact scaffold
+    L += ["## 5. Impact statement scaffold", "",
+          "Fill this in only with what you have actually demonstrated. If a "
+          "line stays empty, the impact is unproven, and an unproven impact "
+          "is the fastest way to lose a report.", "",
+          "1. **What an attacker gains** (one sentence, naming the concrete "
+          "capability gained, not the weakness class): "
+          "_________________________________________________",
+          "2. **What data is reachable** (name the exact data or none, never "
+          "`sensitive data`): "
+          "_________________________________________________",
+          "3. **Blast radius** (how many systems, tenants or accounts, and "
+          "what it takes to get there): "
+          "_________________________________________________", "",
+          "Keep the hypothesis above and the impact below separate. Vendors "
+          "routinely reject reports that blur the two, and a rejected report "
+          "teaches you nothing about whether you were right.", ""]
+
+    # 6. rails verdict
+    L += ["## 6. Rails verdict", ""]
+    if out_of_scope:
+        L += ["**OUT OF SCOPE.** redteam.py will not document, render or "
+              "execute a repro for this candidate, so section 4 above is "
+              "absent by design. The rails it violates:", ""]
+        for rail, why in hits:
+            L.append(f"- **{rail}**: {tierc_mask(why)}")
+        L += ["",
+              "If you still need this investigated, it has to be done by a "
+              "human with written authorisation, on a system you own, with a "
+              "change ticket. That process is deliberately outside this tool.",
+              ""]
+    else:
+        L += ["**IN SCOPE.** The candidate is a read-only observation: no "
+              "destructive method, no cloud metadata address, no flood or "
+              "concurrency hint, no body the scanner does not own, and at "
+              f"most {TIERC_MAX_REQUESTS} requests. It is documented, not "
+              "executed.", ""]
+
+    # 7. next steps
+    L += ["## 7. Next steps", "",
+          "1. **Verify on staging.** Reproduce it on your own staging copy "
+          "first. If it does not reproduce there, stop here: it was noise.",
+          "2. **Check whether a CWE already covers it.** Look it up at "
+          "`https://cwe.mitre.org/data/definitions/<id>.html`. Before you "
+          "invent a class, remember the rule: **name the mechanism rather "
+          "than inventing a class**. HTTP request smuggling has been CWE-444 "
+          "since 2008; a new mechanism deserves a new entry, a known "
+          "mechanism in a new place does not.",
+          "3. **If no entry exists, submit one.** Start at "
+          "`https://cwesubmission.mitre.org/` and follow the process in "
+          "`https://cwe.mitre.org/community/submissions/overview.html`.",
+          "4. **Multi-vendor impact goes to CERT/CC.** Report per "
+          "`https://kb.cert.org/vuls/report/` and coordinate via "
+          "`https://certcc.github.io/CERT-Guide-to-CVD/tutorials/coord_certcc/`. "
+          "Expect pushback: serious multi-vendor findings are routinely "
+          "dismissed as features, and reporters sometimes conclude after the "
+          "fact that they mis-scoped the impact. That is a reason to scope "
+          "honestly up front, not a reason to inflate.",
+          "5. **Category CWEs are not for mapping.** Entries in Category 1000 "
+          "are view-only, Usage: PROHIBITED for mapping, see "
+          "`https://cwe.mitre.org/data/definitions/1035.html`. Never cite a "
+          "Category entry as the weakness class of a finding.", ""]
+
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(L) + "\n")
+    return path
+
+
+def _anomaly_candidate(idx, anom):
+    """Turn one Tier A or Tier B anomaly record into a candidate."""
+    return {"id": f"ANOM-{idx}",
+            "title": f"{anom.get('probe_class', 'anomaly')} on "
+                     f"{anom.get('route', 'unknown route')}",
+            "hypothesis": ("A response to a benign differential probe differs "
+                           "from the baseline in a way that suggests the "
+                           "origin trusts an unvalidated input. State the "
+                           "mechanism you believe is responsible, then verify "
+                           "it on staging before writing any impact claim."),
+            "source": "anomaly",
+            "tier": anom.get("tier", "A"),
+            "anomaly": anom,
+            "repro": anom.get("repro") or []}
+
+
+def load_tierc_candidates(path, cap=50):
+    """Read a hand-written candidate file. It is parsed and rendered only:
+    nothing in it is ever sent."""
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except FileNotFoundError:
+        raise SystemExit(f"--tierc-candidates file not found: {path}")
+    except json.JSONDecodeError as e:
+        raise SystemExit(f"--tierc-candidates file is not valid JSON: {e}")
+    if not isinstance(data, list):
+        raise SystemExit("--tierc-candidates must be a JSON list of candidate "
+                         "objects")
+    if len(data) > cap:
+        raise SystemExit(f"--tierc-candidates holds {len(data)} candidates, "
+                         f"cap is {cap}")
+    out = []
+    for i, c in enumerate(data, 1):
+        if not isinstance(c, dict):
+            raise SystemExit(f"--tierc-candidates entry {i} is not an object")
+        repro = c.get("repro") or []
+        if not isinstance(repro, list):
+            raise SystemExit(f"--tierc-candidates entry {i} has a non-list repro")
+        for j, req in enumerate(repro, 1):
+            if not isinstance(req, dict):
+                raise SystemExit(f"--tierc-candidates entry {i} repro[{j}] "
+                                 "is not an object")
+        out.append({**c, "source": "candidate-file"})
+    return out
+
+
+def run_tierc(bot):
+    """Scenario tierc. Sends nothing: the transport is frozen before any
+    candidate is read, so a bug here still cannot produce traffic."""
+    bot.t.frozen = True
+    bot.tierc = []
+    cfile = getattr(bot.args, "tierc_candidates", None)
+    if cfile:
+        cands = load_tierc_candidates(cfile)
+    else:
+        cands = [_anomaly_candidate(i, a)
+                 for i, a in enumerate(bot.anomalies or [], 1)]
+    out_of_scope = 0
+    for cand in cands:
+        path = tierc_dossier(bot, cand)
+        oos, hits = tierc_rails(cand)
+        out_of_scope += 1 if oos else 0
+        bot.tierc.append({"id": tierc_safe_id(cand.get("id")),
+                          "title": str(cand.get("title") or ""),
+                          "path": path,
+                          "rails": "; ".join(f"{r}: {w}" for r, w in hits)
+                                   or "no rail violated",
+                          "out_of_scope": oos})
+    # Report the transport count honestly: Tier C's own phase sends nothing,
+    # but an anomaly-sourced run may have discovered first, and a scan that
+    # says "0 requests" when it sent some is worse than useless.
+    bot.note(f"tier C: {len(bot.tierc)} dossier(s) written, {out_of_scope} "
+             f"out of scope, {bot.t.used} request(s) sent by the whole run "
+             f"(the dossier phase itself sends none)")
 
 
 HTML_CSS = """
@@ -1914,12 +4068,24 @@ def esc(s):
     return htmllib.escape(str(s or ""))
 
 
+def _sev_filter_buttons():
+    """Built outside the report f-string on purpose: a nested f-string with
+    escaped quotes is only legal on Python 3.12+, and this project targets
+    3.10+."""
+    out = []
+    for s in ["ALL"] + list(SEV_ORDER):
+        cls = "on" if s == "ALL" else ""
+        out.append('<button class="%s" onclick="ff(\'%s\',this)">%s</button>'
+                   % (cls, s, s))
+    return "".join(out)
+
+
 def html_report(bot):
     counts = bot.counts()
     score = bot.score()
     sev_css = {"CRITICAL": "var(--cr)", "HIGH": "var(--hi)", "MEDIUM": "var(--me)",
                "LOW": "var(--lo)", "INFO": "var(--in)"}
-    shown = sorted(bot.findings, key=lambda f: (SEV_ORDER[f["severity"]],
+    shown = sorted(bot.scored(), key=lambda f: (SEV_ORDER[f["severity"]],
                                                 f["check_id"]))
     narr = [f for f in shown if f["severity"] in ("CRITICAL", "HIGH")][:3] or shown[:3]
     rows = []
@@ -1943,15 +4109,35 @@ def html_report(bot):
 </dl></div></details>""")
     owasp_rows = "".join(
         f"<tr><td>{k}:2025</td><td>{esc(v)}</td></tr>" for k, v in OWASP.items())
-    fired = {f['check_id'] for f in bot.findings}
     cov = "".join(
-        f"<tr><td>{esc(cid)}</td><td>{esc(CHECKS[cid][2])}</td>"
-        f"<td class='{'ok' if cid in fired else ''}'>"
-        f"{'FIRED' if cid in fired else 'clean / not applicable'}</td></tr>"
-        for cid in sorted(CHECKS))
+        f"<tr><td>{esc(r['check_id'])}</td><td>{esc(r['owasp'])}</td>"
+        f"<td>{esc(r['severity'])}</td>"
+        f"<td class='{'ok' if r['tested'] else ''}'>"
+        f"{'exercised' if r['tested'] else 'not tested'}</td>"
+        f"<td class='muted'>{esc(r['reason'])}</td></tr>"
+        for r in coverage_statement(bot))
+    warn_rows = "".join(
+        f"<tr><td class='bad'>{esc(w['code'])}</td><td>{esc(w['message'])}</td></tr>"
+        for w in bot.warnings)
+    warn_block = (f"<table><tr><th>Code</th><th>What it means for this scan</th>"
+                  f"</tr>{warn_rows}</table>" if bot.warnings else
+                  '<div class="muted ok">No scan-quality warnings: pages were '
+                  'crawled, responses were not all 401/403, and the budget '
+                  'held.</div>')
+    never = "".join(f"<tr><td>{esc(n['class'])}</td><td class='muted'>"
+                    f"{esc(n['reason'])}</td></tr>" for n in NEVER_TESTED)
+    ev_rows = "".join(
+        f"<tr><td>{esc(f['check_id'])}</td><td>{esc(f['param'] or '')}</td>"
+        f"<td class='muted'>{esc(f['evidence'][:220])}</td></tr>"
+        for f in bot.evidence_records())
+    ev_block = (f"<table><tr><th>Check</th><th>Param</th><th>Record</th></tr>"
+                f"{ev_rows}</table>" if ev_rows else
+                '<div class="muted">No evidence records for this run.</div>')
     recon = "".join(f"<tr><td>{esc(k)}</td><td>{esc(v)}</td></tr>"
                     for k, v in bot.recon)
     notes = "".join(f"<li>{esc(n)}</li>" for n in bot.notes[:40])
+    cal = bot.calibration.profile()
+    auth = bot.auth_state
     barcol = "var(--acc)" if score >= 80 else ("var(--me)" if score >= 50 else "var(--cr)")
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
@@ -1980,18 +4166,35 @@ unverified critical/high count half.</p>
 <h2>Attacker narrative</h2>
 {''.join(f'<div class="narr"><b>{i}. {esc(f["title"])}</b> ({f["severity"]}, {f["owasp"]})<div>{esc(f["impact"])}</div></div>' for i, f in enumerate(narr, 1)) or '<div class="muted">No exploitable path found by the automated pass.</div>'}
 <h2>Findings ({len(shown)})</h2>
-<div class="filt">{''.join(f"<button class='{'on' if s == 'ALL' else ''}' onclick=\"ff('{s}',this)\">{s}</button>" for s in ["ALL"] + list(SEV_ORDER))}
+<div class="filt">{_sev_filter_buttons()}
 </div>
 {''.join(rows) or '<div class="muted">Nothing to report. Automated coverage is a subset of a real assessment: finish with manual access-control, business-logic and abuse-case testing.</div>'}
 </div></div>
+<h2>Scan quality</h2>
+{warn_block}
+<p class="muted">Soft-404 calibration: <b>{esc(str(cal['mode']))}</b>, learned
+status <b>{esc(str(cal['status']))}</b>, body about
+<b>{esc(str(cal['length']))}B</b> (+/-{esc(str(cal['length_tolerance']))}),
+similarity floor {esc(str(cal['similarity_min']))},
+{esc(str(cal['probes_sent']))} probe(s) sent. {esc(cal['detail'])}</p>
+<p class="muted">Authenticated session:
+<span class="{'ok' if auth.get('state') == 'verified' else 'bad'}">{esc(str(auth.get('state')))}</span>
+({esc(str(auth.get('verify_url') or 'not checked'))}). {esc(auth.get('reason') or '')}</p>
+<h2>Evidence records (not scored)</h2>
+{ev_block}
 <h2>OWASP Top 10:2025 mapping</h2>
 <table><tr><th>ID</th><th>Category</th></tr>{owasp_rows}</table>
 <div class="two">
 <div><h2>Check coverage</h2>
-<table><tr><th>Check</th><th>What it probes</th><th>Result</th></tr>{cov}</table></div>
+<table><tr><th>Check</th><th>OWASP</th><th>Severity</th><th>Result</th>
+<th>Why not, when not</th></tr>{cov}</table></div>
 <div><h2>Recon</h2><table><tr><th>Item</th><th>Value</th></tr>{recon}</table>
 <h2>Engine notes</h2><ul class="muted">{notes or '<li>none</li>'}</ul></div>
 </div>
+<h2>Never tested by design</h2>
+<p class="muted">These classes are outside an automated, non-destructive pass.
+A green run says nothing about them.</p>
+<table><tr><th>Class</th><th>Why this tool does not test it</th></tr>{never}</table>
 <h2>Method and safety rails</h2>
 <p class="muted">Scope gate: every request host must match the allowlist, or it is
 never sent. Rate limit {bot.args.rps} req/s with jitter, hard budget
@@ -2014,12 +4217,106 @@ RUNNERS = {
     "cookies": [check_cookies],
     "jwt": [check_jwt],
     "secrets": [check_secrets],
+    "sweep": [check_global_sweep],
     "exposures": [check_exposures, check_stacktrace, check_graphql],
     "injection": [check_injection],
     "auth": [check_auth, check_ratelimit],
     "client": [check_client],
     "methods": [check_methods],
+    "anomaly": [check_anomaly],
+    "tierc": [run_tierc],
+"tierb": [check_desync_cells, check_unicode_oracles,
+              check_delimiter_confusion, check_api_states],
 }
+
+# A passive replay can only judge what a stored response already contains,
+# so it runs exactly these: header policy, cookie policy, sourcemap
+# references, secrets, and the global sweep. Nothing here sends a request.
+PER_RESPONSE_RUNNERS = [check_headers, check_cookies, check_client]
+WHOLE_SET_RUNNERS = [check_secrets, check_global_sweep]
+PASSIVE_SCOPE = frozenset(GROUPS["headers"] + GROUPS["cookies"] +
+                          GROUPS["secrets"] + GROUPS["client"] +
+                          ["exp-sourcemap", "global-secret-sweep"])
+
+
+def run_passive_replay(bot):
+    """M7: judge stored responses only. bot.t.used must stay 0 throughout."""
+    files = getattr(bot.args, "passive_html", None) or []
+    bot.load_passive_files(files)
+    bot.enter_replay()
+    bot.calibration.learn()          # reuses a stored response, sends nothing
+    judged = 0
+    try:
+        for url, r in list(bot.pages.items()):
+            if r is None:
+                continue
+            judged += 1
+            bot.replay_base = url
+            for fn in PER_RESPONSE_RUNNERS:
+                try:
+                    fn(bot)
+                except BudgetExceeded:
+                    raise
+                except Exception as e:
+                    bot.degrade(fn.__name__, f"{type(e).__name__}: {e}")
+        bot.replay_base = None
+        for fn in WHOLE_SET_RUNNERS:
+            try:
+                fn(bot)
+            except BudgetExceeded:
+                raise
+            except Exception as e:
+                bot.degrade(fn.__name__, f"{type(e).__name__}: {e}")
+        # re-test inside the replay: a verify closure must never reach the
+        # transport, it answers from the stored response
+        try:
+            bot.verify_findings()
+        except BudgetExceeded:
+            raise
+        except Exception as e:
+            bot.degrade("verify_findings", f"{type(e).__name__}: {e}")
+    finally:
+        bot.exit_replay()
+    used = bot.t.used
+    if used:
+        bot.note(f"passive replay contract violated: {used} request(s) were "
+                 f"sent, it must stay at 0")
+    bot.add("global-secret-sweep", url=bot.t.base, param="passive-replay",
+            internal=True, severity="INFO",
+            evidence=f"passive replay judged {judged} stored response(s) with "
+                     f"the response-only checks, requests sent: {used}")
+    bot.recon.append(("passive replay", f"{judged} responses, {used} requests"))
+    return used
+
+
+def scan_quality(bot):
+    """M20: turn this run's shape into explicit, machine-readable warnings."""
+    statuses = bot.status_counts
+    if bot.responses_seen and statuses and all(s in (401, 403) for s in statuses):
+        bot.warn("all_unauthorized",
+                 f"every one of the {bot.responses_seen} responses was 401 or "
+                 f"403, so nothing was actually tested: fix the session or the "
+                 f"credentials and re-run")
+    soft, live = bot.soft404_audit()
+    if soft and not live:
+        bot.warn("everything_soft_404",
+                 f"all {soft} captured responses match the learned not-found "
+                 f"profile (HTTP {bot.calibration.status}): the crawl found no "
+                 f"real content")
+    live_pages = [u for u, r in bot.pages.items() if r.status < 400]
+    if not live_pages:
+        bot.warn("no_pages_crawled",
+                 f"no response under HTTP 400 was captured out of "
+                 f"{len(bot.pages)} attempted: the target may be down, "
+                 f"misrouted, or entirely behind auth")
+    if bot.stopped:
+        bot.warn("budget_exhausted",
+                 f"the request budget ran out before the run finished: "
+                 f"{bot.stopped}")
+    if bot.degraded:
+        bot.warn("checks_degraded",
+                 f"{len(bot.degraded)} check(s) hit the guarded() error path "
+                 f"and did not finish: {'; '.join(bot.degraded[:3])}")
 
 
 def build_parser():
@@ -2027,7 +4324,9 @@ def build_parser():
         prog="redteam.py",
         description="Authorized red team simulator for a website YOU own. "
                     "Finds vulnerabilities, prints the exact fix.",
-        epilog="Exit codes: 2 = critical findings, 1 = high findings, 0 = clean.")
+        epilog="Exit codes: 3 = internal error or a scan-quality warning "
+               "under --strict-warnings, 2 = critical findings, "
+               "1 = high findings, 0 = clean.")
     p.add_argument("--target", help="https://your-site.example")
     p.add_argument("--allow", action="append", default=[],
                    help="hostname in scope, repeatable or comma separated")
@@ -2057,6 +4356,54 @@ def build_parser():
                    help="subdomain takeover leads from crt.sh certificate "
                         "transparency + DNS only (passive)")
     p.add_argument("--quiet", action="store_true", help="suppress terminal findings")
+    p.add_argument("--passive", action="store_true",
+                   help="passive replay: judge stored responses and "
+                        "--passive-html files, issue zero requests")
+    p.add_argument("--passive-html", action="append", default=[],
+                   metavar="FILE",
+                   help="saved HTML to replay offline, repeatable")
+    p.add_argument("--tierb", action="store_true",
+                   help="also run the Tier B surface-hunting modules "
+                        "(anomalies only, they never change the score)")
+    p.add_argument("--desync-probe", action="store_true",
+                   help="walk the CL/TE/0 length-interpretation cells with a "
+                        "canary (Tier B; off by default, sends nothing)")
+    p.add_argument("--allow-h2-probe", action="store_true",
+                   help="relax reporting for the H2 desync cell; still sends "
+                        "nothing, because http.client is HTTP/1.1 only")
+    p.add_argument("--desync-path",
+                   help="path for the desync cells (default: the target path)")
+    p.add_argument("--delimiter-path",
+                   help="path for the delimiter-confusion probes (default: "
+                        "the first crawled GET path)")
+    p.add_argument("--api-spec",
+                   help="local JSON OpenAPI 3 document for the API state walk")
+    p.add_argument("--allow-spec-post", action="store_true",
+                   help="allow POST (never PUT/PATCH/DELETE) against spec "
+                        "operations marked post, with dummy bodies only")
+    p.add_argument("--anomaly", action="store_true",
+                   help="run the Tier A anomaly engine regardless of scenario")
+    p.add_argument("--anomaly-cap", type=int, default=5, metavar="N",
+                   help="max anomalies reported per route (clamped to 20)")
+    p.add_argument("--anomaly-keep-all", action="store_true",
+                   help="skip the anomaly noise filter, for debugging")
+    p.add_argument("--tierc-candidates", metavar="FILE",
+                   help="tierc: JSON candidate file to document (never "
+                        "executed)")
+    p.add_argument("--tierc-dir", default="research", metavar="DIR",
+                   help="tierc: directory for generated dossiers")
+    p.add_argument("--tierc-from-anomalies", action="store_true",
+                   help="tierc: run the anomaly engine first, then write one "
+                        "dossier per anomaly")
+    p.add_argument("--strict-warnings", action="store_true",
+                   help="any scan-quality warning turns an otherwise clean "
+                        "run into exit code 3")
+    p.add_argument("--auth-verify-url",
+                   help="URL fetched once to decide whether --cookie is really "
+                        "authenticated (default: the target)")
+    p.add_argument("--auth-marker",
+                   help="string that only appears on a logged-in page, used by "
+                        "the auth verify predicate")
     p.add_argument("--no-color", action="store_true")
     p.add_argument("--list-checks", action="store_true")
     return p
@@ -2074,6 +4421,20 @@ def list_checks():
 
 
 def run(args):
+    """M18 exit-code contract: 0 clean, 1 any HIGH, 2 any CRITICAL, 3 an
+    internal error escaping the run (or any warning under --strict-warnings).
+    SystemExit still propagates: those are operator errors, not scan results.
+    """
+    try:
+        return _run(args)
+    except SystemExit:
+        raise
+    except Exception as e:
+        sys.stderr.write(f"internal error: {type(e).__name__}: {e}\n")
+        return 3
+
+
+def _run(args):
     if args.list_checks:
         list_checks()
         return 0
@@ -2084,7 +4445,13 @@ def run(args):
         raise SystemExit("--allow is required: name the host you own, "
                          "e.g. --allow yourdomain.example")
     mode = "active"
-    if not args.i_own_this:
+    if args.passive:
+        mode = "passive-replay"
+    elif args.scenario == "tierc":
+        # Tier C is documentation-only: it needs no ownership flag because it
+        # never sends a request, so it must not be demoted to passive recon.
+        mode = "research"
+    elif not args.i_own_this:
         mode = "passive"
         args.scenario = "recon"
     t = Transport(args.target, allow, args.rps, args.max_requests,
@@ -2096,30 +4463,66 @@ def run(args):
         bot.note("authenticated checks enabled via --cookie")
 
     def guarded(fn):
+        who = getattr(fn, "__name__", "check")
         try:
             fn(bot)
         except BudgetExceeded as e:
             bot.stopped = str(e)
         except OutOfScope as e:
             bot.note(f"scope violation blocked: {e}")
+            bot.degrade(who, "out-of-scope request blocked")
         except Exception as e:
             bot.note(f"check degraded ({type(e).__name__}): {e}")
+            bot.degrade(who, f"{type(e).__name__}: {e}")
 
-    guarded(lambda b: b.discover())
-    if bot.stopped is None:
-        for group in SCENARIOS[args.scenario]:
-            for fn in RUNNERS[group]:
-                if bot.stopped:
-                    break
-                guarded(fn)
-    if bot.stopped is None:
-        guarded(lambda b: b.verify_findings())
+    # Tier C with a candidate file is documentation-only: discovery would
+    # send requests to learn nothing the dossier uses. Every other scenario
+    # discovers first, then runs its groups.
+    tierc_docs_only = (args.scenario == "tierc"
+                       and bool(getattr(args, "tierc_candidates", None)))
+    if args.passive:
+        run_passive_replay(bot)
+    elif tierc_docs_only:
+        bot.note("tier C: candidate file supplied, discovery skipped so the "
+                 "whole run sends zero requests")
     else:
-        # still try to verify what we already have, cheaply
-        try:
-            bot.verify_findings()
-        except BudgetExceeded:
-            pass
+        guarded(lambda b: b.discover())
+        guarded(lambda b: b.verify_auth())
+
+    # A passive replay has already judged everything it can judge, inside the
+    # replay sandbox. Running the scenario loop afterwards would put the full
+    # check set back on a live transport, which is exactly what --passive
+    # exists to prevent.
+    if args.passive:
+        pass
+    elif not tierc_docs_only:
+        groups = list(SCENARIOS[args.scenario])
+        # --anomaly forces the Tier A engine on regardless of the scenario,
+        # and never replaces the scenario's own groups
+        if getattr(args, "anomaly", False) and "anomaly" not in groups:
+            groups.append("anomaly")
+        if getattr(args, "tierb", False) and "tierb" not in groups:
+            groups.append("tierb")
+        if bot.stopped is None:
+            for group in groups:
+                for fn in RUNNERS[group]:
+                    if bot.stopped:
+                        break
+                    guarded(fn)
+        if bot.stopped is None:
+            guarded(lambda b: b.verify_findings())
+        else:
+            # still try to verify what we already have, cheaply
+            try:
+                bot.verify_findings()
+            except BudgetExceeded:
+                pass
+    else:
+        # documentation only: the dossier writer still has to run
+        for fn in RUNNERS["tierc"]:
+            guarded(fn)
+    bot.downgrade_cookie_confidence()
+    scan_quality(bot)
 
     ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     out_dir = args.report_dir or f"rt-report-{ts}"
@@ -2143,6 +4546,8 @@ def run(args):
         return 2
     if counts["HIGH"]:
         return 1
+    if args.strict_warnings and bot.warnings:
+        return 3
     return 0
 
 

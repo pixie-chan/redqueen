@@ -38,6 +38,10 @@
 
 
 H.hits = 0
+# Tier B: the method log lets a QA gate prove no mutating verb was ever sent,
+# and the stash backs the deliberately broken desync echo handler.
+H.methods = []
+H.stash = b""
 
 
 def main():

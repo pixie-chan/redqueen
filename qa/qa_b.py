@@ -1,5 +1,40 @@
 
 
+import argparse
+import importlib.util
+import shutil
+import tempfile
+import urllib.request
+
+# R2 gates use their own port so a parallel QA run on the default port
+# cannot hand this suite somebody else's harness.
+R2_PORT = PORT + 10
+QX_KEY_MATERIAL = "b3BlbnNzaC1rZXktbWF0ZXJpYWwKc29tZSBmaW5hbCBsaW5l"
+
+
+def load_bot_module():
+    """Import redteam.py as a module so unit-level gates exercise the real
+    code, not a copy of it."""
+    spec = importlib.util.spec_from_file_location("rt", BOT)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def bot_args(**over):
+    ns = argparse.Namespace(
+        cookie=None, respect_robots=True, max_pages=5, scenario="recon",
+        wayback=False, ct_log=False, rps=60, max_requests=60, timeout=5,
+        insecure=False, local=True, deep_traversal=False,
+        traversal_canary=None, i_own_this=True, passive=False,
+        passive_html=None, strict_warnings=False, auth_verify_url=None,
+        auth_marker=None, quiet=True, no_color=True, list_checks=False,
+        report_dir=None)
+    for k, v in over.items():
+        setattr(ns, k, v)
+    return ns
+
+
 def gen_cert():
     here = os.path.dirname(os.path.abspath(__file__))
     cert = os.path.join(here, "cert.pem")
@@ -125,6 +160,133 @@ def main():
          r7.returncode != 0 and "IP-literal" in (r7.stderr + r7.stdout),
          f"rc={r7.returncode}")
 
+    # ================= R2: robustness release =================
+    rt = load_bot_module()
+    tmp = tempfile.mkdtemp(prefix="rt-r2-")
+    r2base = ["--target", f"http://127.0.0.1:{R2_PORT}", "--allow", "127.0.0.1",
+              "--local", "--i-own-this", "--rps", "60", "--no-color"]
+    try:
+        # 1. M5: the learned not-found profile separates 404 from 200
+        cal_ok, cal_detail = True, []
+        for mode in ("weak", "strong"):
+            p = start(mode, R2_PORT)
+            try:
+                t = rt.Transport(f"http://127.0.0.1:{R2_PORT}", ["127.0.0.1"],
+                                 60, 60, 5, False, True)
+                bot = rt.Bot(t, bot_args())
+                live = bot.get(t.base + "/")
+                missing = bot.get(t.base + "/qx-no-such-route-zz")
+                cal = rt.Calibration(bot)
+                cal.learn()
+                got = (bool(cal.is_not_found(missing)),
+                       bool(cal.is_not_found(live)))
+                cal_detail.append(f"{mode}: learned HTTP {cal.status} from "
+                                  f"{cal.probes_sent} probes, "
+                                  f"not_found(missing)={got[0]}, "
+                                  f"not_found(200 page)={got[1]}")
+                cal_ok = cal_ok and got == (True, False) and cal.probes_sent == 5
+            finally:
+                stop(p)
+        gate("r2 calibration: learned profile separates 404 from 200", cal_ok,
+             "; ".join(cal_detail))
+
+        # 2. M8: the sweep catches the header-borne private key, masked,
+        #    and suppresses what secret-leak already reported
+        sweep = [f for f in rep["findings"]
+                 if f["check_id"] == "global-secret-sweep" and not f["internal"]]
+        keyhit = [f for f in sweep if f["severity"] == "CRITICAL"
+                  and "private key" in (f["param"] or "").lower()]
+        masked = bool(keyhit) and all("*" in f["evidence"] for f in keyhit)
+        clean = not any(QX_KEY_MATERIAL in f["evidence"] or
+                        "BEGIN OPENSSH" in f["evidence"] for f in sweep)
+        deduped = any("already reported as secret-leak" in e["evidence"]
+                      for e in rep.get("evidence_records", []))
+        gate("r2 sweep: header private key found, evidence masked, dedupe on",
+             bool(keyhit) and masked and clean and deduped,
+             f"sweep findings={[f['param'] for f in sweep]}, "
+             f"raw key in evidence={not clean}, dedupe record={deduped}")
+
+        # 3. M7: passive replay of a saved page sends nothing at all
+        page = os.path.join(tmp, "saved-index.html")
+        p = start("weak", R2_PORT)
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{R2_PORT}/",
+                                        timeout=10) as fh:
+                saved = fh.read()
+            with open(page, "wb") as fh:
+                fh.write(saved)
+        finally:
+            stop(p)
+        rep_p, r_p = run_bot(r2base + ["--passive", "--passive-html", page],
+                             os.path.join(tmp, "passive"))
+        gate("r2 passive: replay of a saved page ends with requests_used == 0",
+             rep_p["requests_used"] == 0
+             and rep_p.get("passive", {}).get("zero_requests") is True
+             and bool(rep_p["checks_fired"]),
+             f"requests={rep_p['requests_used']}, "
+             f"replayed={rep_p.get('passive', {}).get('responses_replayed')}, "
+             f"fired={len(rep_p['checks_fired'])}, rc={r_p.returncode}")
+
+        # 4. M20 + M18: warnings land in the json and drive the exit code
+        empty_args = r2base + ["--scenario", "recon", "--max-requests", "100"]
+        p = start("empty", R2_PORT)
+        try:
+            rep_e1, r_e1 = run_bot(empty_args, os.path.join(tmp, "empty-loose"))
+            rep_e2, r_e2 = run_bot(empty_args + ["--strict-warnings"],
+                                   os.path.join(tmp, "empty-strict"))
+        finally:
+            stop(p)
+        codes = [w["code"] for w in rep_e1.get("warnings", [])]
+        gate("r2 warnings: no_pages_crawled exits 3 under --strict-warnings, 0 "
+             "without",
+             "no_pages_crawled" in codes
+             and r_e1.returncode == 0 and r_e2.returncode == 3
+             and isinstance(rep.get("warnings"), list)
+             and isinstance(rep_e2.get("warnings"), list)
+             and [w["code"] for w in rep_e2["warnings"]] == codes,
+             f"empty-run warnings={codes}, rc loose={r_e1.returncode}, "
+             f"rc strict={r_e2.returncode}")
+
+        # 5. M21: coverage lists the whole catalogue once, reasons included
+        cov = rep.get("coverage") or []
+        ids = [c["check_id"] for c in cov]
+        want = set(rt.CHECKS)
+        never = rep.get("never_tested") or []
+        cov_ok = (len(ids) == len(set(ids)) == len(want)
+                  and set(ids) == want
+                  and all(set(c) >= {"check_id", "owasp", "severity", "tested",
+                                     "reason"} for c in cov)
+                  and len(never) >= 6
+                  and all(n.get("class") and n.get("reason", "").strip()
+                          for n in never))
+        gate("r2 coverage: every check id exactly once, never-tested reasons "
+             "present", cov_ok,
+             f"rows={len(ids)}, unique={len(set(ids))}, catalogue={len(want)}, "
+             f"never_tested={len(never)}")
+
+        # 6. M14: no cookie, login page at the verify url, unverified + reason
+        p = start("weak", R2_PORT)
+        try:
+            rep_a, r_a = run_bot(r2base + ["--scenario", "recon",
+                                           "--max-requests", "60",
+                                           "--auth-verify-url",
+                                           f"http://127.0.0.1:{R2_PORT}/login"],
+                                 os.path.join(tmp, "auth"))
+        finally:
+            stop(p)
+        auth = rep_a.get("auth_state") or {}
+        gate("r2 auth: verify url with no --cookie reports unverified + reason",
+             auth.get("state") == "unverified"
+             and bool((auth.get("reason") or "").strip()),
+             f"state={auth.get('state')}, reason={(auth.get('reason') or '')[:70]}")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    # 6. Tier A + Tier C gates (qa_c.py) and Tier B gates (qa_d.py)
+    anomaly_gates(base, rep, r)
+    tierc_gates(base)
+    tierb_gates(base)
+
     print()
     if failures:
         print(f"QA FAILED: {failures}")
@@ -133,5 +295,5 @@ def main():
     return 0
 
 
-if __name__ == "__main__":
-    sys.exit(main())
+# the __main__ guard lives at the end of qa_c.py so anomaly_gates and
+# tierc_gates are defined before main() runs

@@ -28,11 +28,28 @@ def mask_token(raw):
     return raw[:6] + "*" * (len(raw) - 10) + raw[-4:]
 
 
+def secret_hash(value, url):
+    """Stable dedupe key for one secret value seen on one URL."""
+    return hashlib.sha256((value + "\n" + url).encode("utf-8", "replace")
+                          ).hexdigest()[:16]
+
+
 def make_secret_vfy(bot, url, rx):
     def v():
         rr = bot.get(url)
         return rr is not None and rx.search(rr.text) is not None
     return v
+
+
+def header_blob(resp):
+    """Every header the server sent, as one searchable string."""
+    out = []
+    for k, v in resp.headers.items():
+        if k == "set-cookie-list":
+            out.extend(str(x) for x in (v or []))
+        else:
+            out.append(f"{k}: {v}")
+    return "\n".join(out)
 
 
 def check_secrets(bot):
@@ -46,13 +63,104 @@ def check_secrets(bot):
             if not m:
                 continue
             raw = m.group(0)
-            bot.add("secret-leak", url=src_url, severity=sev, param=name,
-                    confidence="medium" if name == "Google API key" else "high",
-                    evidence=f"{name} in served content: {mask_token(raw)} "
-                             f"(value redacted)",
-                    detail="client-visible secret: treat as compromised, "
-                           "rotate it and move it server-side",
-                    verify=make_secret_vfy(bot, src_url, rx))
+            f = bot.add("secret-leak", url=src_url, severity=sev, param=name,
+                        confidence="medium" if name == "Google API key"
+                        else "high",
+                        evidence=f"{name} in served content: "
+                                 f"{mask_token(raw)} (value redacted)",
+                        detail="client-visible secret: treat as compromised, "
+                               "rotate it and move it server-side",
+                        verify=make_secret_vfy(bot, src_url, rx))
+            if f is not None:
+                f["secret_hash"] = secret_hash(raw, src_url)
+
+
+# M8 global matcher sweep: run once over every captured response, body AND
+# headers, with the secret patterns plus the stack-trace signatures. Same
+# secret on the same URL is reported once, no matter which check found it.
+SWEEP_RES = [
+    ("Embedded private key",
+     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"), "CRITICAL"),
+    ("AWS access key ID", re.compile(r"AKIA[0-9A-Z]{16}"), "HIGH"),
+    ("Stripe live secret", re.compile(r"sk_live_[0-9A-Za-z]{10,}"), "HIGH"),
+    ("GitHub token", re.compile(r"ghp_[A-Za-z0-9]{20,}"), "HIGH"),
+    ("Slack token", re.compile(r"xox[baprs]-[A-Za-z0-9-]{10,}"), "HIGH"),
+    ("Google API key", re.compile(r"AIza[0-9A-Za-z_-]{35}"), "HIGH"),
+    ("OpenAI-style secret key", re.compile(r"(?<![\w-])sk-[A-Za-z0-9]{32,}"),
+     "HIGH"),
+    ("Bearer credential",
+     re.compile(r"(?i)bearer[\"'\s:=]{1,4}[A-Za-z0-9._\-]{25,}"), "HIGH"),
+] + [("Stack trace: " + label, re.compile(rx), "HIGH")
+     for rx, label in STACK_SIGS]
+
+
+def sweep_family(name):
+    """One stack trace per page is a finding; the rest is noise. Every secret
+    pattern keeps its own family so a page carrying two different keys still
+    reports both."""
+    return "stack-trace" if name.startswith("Stack trace: ") else name
+
+
+def make_sweep_vfy(bot, url, rx, where):
+    def v():
+        rr = bot.get(url)
+        if rr is None:
+            return False
+        if where == "body":
+            return rx.search(rr.text) is not None
+        return rx.search(header_blob(rr)) is not None
+    return v
+
+
+def check_global_sweep(bot):
+    reported = {f["secret_hash"] for f in bot.findings
+                if f["check_id"] == "secret-leak" and f.get("secret_hash")}
+    swept = matched = dupes = collapsed = 0
+    seen_family = set()
+    for url, r in bot.pages.items():
+        for where, text in (("body", r.text), ("header", header_blob(r))):
+            if not text or len(text) > 2_000_000:
+                continue
+            swept += 1
+            for name, rx, sev in SWEEP_RES:
+                m = rx.search(text)
+                if not m:
+                    continue
+                matched += 1
+                fam = (url, sweep_family(name))
+                if fam in seen_family:
+                    collapsed += 1
+                    continue
+                seen_family.add(fam)
+                raw = m.group(0)
+                h = secret_hash(raw, url)
+                if h in reported:
+                    dupes += 1
+                    bot.add("global-secret-sweep", url=url, param=f"dedupe:{name}",
+                            internal=True, severity="INFO",
+                            evidence=f"{name} on {url} was already reported as "
+                                     f"secret-leak (hash {h}); suppressed here so "
+                                     f"one secret counts once")
+                    continue
+                reported.add(h)
+                f = bot.add("global-secret-sweep", url=url, param=name,
+                            severity=sev,
+                            evidence=f"{name} matched in the {where} of this "
+                                     f"response: {mask_token(raw)} "
+                                     f"(value redacted)",
+                            detail="found by the global matcher sweep across "
+                                   "every captured response, not only where an "
+                                   "exposure probe happened to land",
+                            verify=make_sweep_vfy(bot, url, rx, where))
+                if f is not None:
+                    f["secret_hash"] = h
+    bot.add("global-secret-sweep", url=bot.t.base, param="sweep-evidence",
+            internal=True, severity="INFO",
+            evidence=f"global sweep read {swept} captured response halves "
+                     f"({len(bot.pages)} responses, bodies and headers): "
+                     f"{matched} pattern matches, {dupes} already reported by "
+                     f"secret-leak, {collapsed} more signatures of an already "
+                     f"reported class on the same page")
 
 
 def check_auth(bot):
@@ -90,7 +198,7 @@ def check_auth(bot):
         if not has_token:
             bot.add("csrf-token-missing", url=action,
                     param=",".join(n for n in names if n)[:80],
-                    confidence="medium",
+                    confidence="medium", negative=True,
                     evidence=f"POST form with fields: {', '.join(names)[:160]} "
                              f"and no hidden CSRF token",
                     detail="confirm by replaying from a cross-origin page on a "
@@ -153,7 +261,7 @@ def check_sectxt(bot):
             bot.recon.append(("security.txt", path))
             return
     bot.add("sec-txt-missing", url=bot.t.base + "/.well-known/security.txt",
-            evidence="no RFC 9116 security.txt found")
+            evidence="no RFC 9116 security.txt found", negative=True)
 
 
 def check_client(bot):
