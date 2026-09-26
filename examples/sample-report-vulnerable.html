@@ -66,7 +66,7 @@ letter-spacing:.08em}
 <div class="meta">target <b>http://127.0.0.1:8931/</b> ·
 scope <b>127.0.0.1</b> ·
 scenario <b>full</b> ·
-finished <b>2026-09-25T18:06:58+00:00</b> UTC ·
+finished <b>2026-09-26T07:20:16+00:00</b> UTC ·
 requests <b>148/400</b></div>
 </header>
 <div class="grid">
@@ -94,7 +94,7 @@ verified</span></summary>
 <dt>Where</dt><dd>http://127.0.0.1:8931/search?q=hello · param q</dd>
 <dt>Why it matters</dt><dd>the attacker runs arbitrary commands on your server, total compromise</dd>
 
-<dt>Evidence</dt><dd><pre>server echoed injected marker QX608665b8af without the command text (separator &#x27;; echo&#x27;)</pre></dd>
+<dt>Evidence</dt><dd><pre>server echoed injected marker QXb663da2778 without the command text (separator &#x27;; echo&#x27;)</pre></dd>
 <dt>Exact fix</dt><dd class="fix">never pass input to a shell; call fixed executables with argument arrays, allowlist inputs</dd>
 <dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A05_2025-Injection/">top10.owasp.org</a></dd>
 </dl></div></details><details class="f" data-sev="CRITICAL"
@@ -247,7 +247,7 @@ verified</span></summary>
 <span class="fmeta">A10 · err-stacktrace ·
 verified</span></summary>
 <div class="fbody"><dl>
-<dt>Where</dt><dd>http://127.0.0.1:8931/qx-err-ed91cffc</dd>
+<dt>Where</dt><dd>http://127.0.0.1:8931/qx-err-49afc947</dd>
 <dt>Why it matters</dt><dd>internal paths, framework versions and query shapes leak, aiding follow-up attacks</dd>
 
 <dt>Evidence</dt><dd><pre>Traceback (most recent call last):
@@ -344,7 +344,7 @@ verified</span></summary>
 <dt>Where</dt><dd>http://127.0.0.1:8931/download?file=readme.txt · param file</dd>
 <dt>Why it matters</dt><dd>attacker links hijack any victim&#x27;s session on your domain</dd>
 
-<dt>Evidence</dt><dd><pre>raw echo of &#x27;&lt;&quot;&gt;\&#x27;QX5a4fabf36ada0fee&#x27; in response body</pre></dd>
+<dt>Evidence</dt><dd><pre>raw echo of &#x27;&lt;&quot;&gt;\&#x27;QXf7513e71d33378ea&#x27; in response body</pre></dd>
 <dt>Exact fix</dt><dd class="fix">context-aware output encoding (framework auto-escape), avoid innerHTML, add CSP as a second layer</dd>
 <dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A05_2025-Injection/">top10.owasp.org</a></dd>
 </dl></div></details><details class="f" data-sev="HIGH"
@@ -357,7 +357,7 @@ verified</span></summary>
 <dt>Where</dt><dd>http://127.0.0.1:8931/search?q=hello · param q</dd>
 <dt>Why it matters</dt><dd>attacker links hijack any victim&#x27;s session on your domain</dd>
 
-<dt>Evidence</dt><dd><pre>raw echo of &#x27;&lt;&quot;&gt;\&#x27;QX5a4fabf36a8bbcdd&#x27; in response body</pre></dd>
+<dt>Evidence</dt><dd><pre>raw echo of &#x27;&lt;&quot;&gt;\&#x27;QXf7513e71d3b81c3d&#x27; in response body</pre></dd>
 <dt>Exact fix</dt><dd class="fix">context-aware output encoding (framework auto-escape), avoid innerHTML, add CSP as a second layer</dd>
 <dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A05_2025-Injection/">top10.owasp.org</a></dd>
 </dl></div></details><details class="f" data-sev="MEDIUM"
@@ -448,7 +448,7 @@ high</span></summary>
 <dt>Where</dt><dd>http://127.0.0.1:8931/openapi.json</dd>
 <dt>Why it matters</dt><dd>the full API surface, including forgotten endpoints, is handed to attackers</dd>
 
-<dt>Evidence</dt><dd><pre>openapi spec: application/json 50B, status 200</pre></dd>
+<dt>Evidence</dt><dd><pre>openapi spec: application/json 62B, status 200</pre></dd>
 <dt>Exact fix</dt><dd class="fix">serve OpenAPI/Swagger only in staging or behind auth; block schema paths at the edge</dd>
 <dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/">top10.owasp.org</a></dd>
 </dl></div></details><details class="f" data-sev="MEDIUM"
@@ -592,7 +592,7 @@ high</span></summary>
 <dt>Why it matters</dt><dd>cross-site tracing can echo custom headers back to scripts</dd>
 
 <dt>Evidence</dt><dd><pre>TRACE / HTTP/1.1
-User-Agent: QuantIQRedTeamBot/1.0 (authorized self-testing)
+User-Agent: placeholder_websiteRedTeamBot/1.0 (authorized self-testing)
 Cookie: 
 </pre></dd>
 <dt>Exact fix</dt><dd class="fix">disable TRACE at the server/proxy: nginx does not enable it by default, apache: TraceEnable off</dd>
@@ -659,7 +659,7 @@ high</span></summary>
 <dt>Where</dt><dd>http://127.0.0.1:8931/package.json</dd>
 <dt>Why it matters</dt><dd>exact component versions are known, CVE matching becomes one-shot</dd>
 
-<dt>Evidence</dt><dd><pre>manifest: application/json 54B, status 200</pre></dd>
+<dt>Evidence</dt><dd><pre>manifest: application/json 66B, status 200</pre></dd>
 <dt>Exact fix</dt><dd class="fix">deny package manifests at the edge; run npm audit / osv-scanner to check those versions yourself first</dd>
 <dt>Reference</dt><dd><a href="https://top10.owasp.org/2025/A03_2025-Software_Supply_Chain_Failures/">top10.owasp.org</a></dd>
 </dl></div></details><details class="f" data-sev="LOW"
@@ -799,8 +799,8 @@ high</span></summary>
 <div class="two">
 <div><h2>Check coverage</h2>
 <table><tr><th>Check</th><th>What it probes</th><th>Result</th></tr><tr><td>admin-force-browse</td><td>Admin surface reachable without login</td><td class='ok'>FIRED</td></tr><tr><td>clickjack</td><td>Page can be framed (clickjacking)</td><td class='ok'>FIRED</td></tr><tr><td>cmdi-echo</td><td>OS command injection</td><td class='ok'>FIRED</td></tr><tr><td>cookie-httponly</td><td>Session cookie without HttpOnly</td><td class='ok'>FIRED</td></tr><tr><td>cookie-long-life</td><td>Session cookie lives for a very long time</td><td class=''>clean / not applicable</td></tr><tr><td>cookie-plaintext</td><td>Session cookie issued over HTTP</td><td class='ok'>FIRED</td></tr><tr><td>cookie-samesite</td><td>Session cookie without SameSite</td><td class='ok'>FIRED</td></tr><tr><td>cookie-samesite-none</td><td>SameSite=None cookie without Secure</td><td class=''>clean / not applicable</td></tr><tr><td>cookie-secure</td><td>Session cookie without Secure flag</td><td class=''>clean / not applicable</td></tr><tr><td>cors-null</td><td>CORS trusts the null origin</td><td class=''>clean / not applicable</td></tr><tr><td>cors-reflect</td><td>CORS reflects arbitrary Origin</td><td class='ok'>FIRED</td></tr><tr><td>cors-star</td><td>Wildcard CORS on an authenticated endpoint</td><td class=''>clean / not applicable</td></tr><tr><td>csrf-token-missing</td><td>State-changing form without CSRF token</td><td class='ok'>FIRED</td></tr><tr><td>dir-listing</td><td>Directory listing enabled</td><td class='ok'>FIRED</td></tr><tr><td>err-stacktrace</td><td>Stack trace or debug page exposed</td><td class='ok'>FIRED</td></tr><tr><td>exp-admin-panel</td><td>Admin interface reachable from the internet</td><td class='ok'>FIRED</td></tr><tr><td>exp-api-docs</td><td>API documentation exposed publicly</td><td class='ok'>FIRED</td></tr><tr><td>exp-aws</td><td>Cloud credentials file exposed</td><td class='ok'>FIRED</td></tr><tr><td>exp-backup</td><td>Backup or archive file exposed</td><td class='ok'>FIRED</td></tr><tr><td>exp-config</td><td>Configuration file exposed</td><td class='ok'>FIRED</td></tr><tr><td>exp-debug-endpoint</td><td>Debug/monitoring endpoint exposed</td><td class='ok'>FIRED</td></tr><tr><td>exp-deps</td><td>Dependency manifest exposed</td><td class='ok'>FIRED</td></tr><tr><td>exp-env</td><td>Environment file exposed</td><td class='ok'>FIRED</td></tr><tr><td>exp-git</td><td>Git repository exposed on the server</td><td class='ok'>FIRED</td></tr><tr><td>exp-keyfile</td><td>Private key file exposed on the server</td><td class='ok'>FIRED</td></tr><tr><td>exp-sourcemap</td><td>Source map published</td><td class='ok'>FIRED</td></tr><tr><td>graphql-introspection</td><td>GraphQL introspection enabled in production</td><td class='ok'>FIRED</td></tr><tr><td>hdr-banner</td><td>Server version disclosed in banner</td><td class='ok'>FIRED</td></tr><tr><td>hdr-cache-sensitive</td><td>Sensitive page is cacheable</td><td class='ok'>FIRED</td></tr><tr><td>hdr-coop</td><td>Cross-Origin-Opener-Policy missing</td><td class='ok'>FIRED</td></tr><tr><td>hdr-corp</td><td>Cross-Origin-Resource-Policy missing</td><td class='ok'>FIRED</td></tr><tr><td>hdr-csp-missing</td><td>Content-Security-Policy missing</td><td class='ok'>FIRED</td></tr><tr><td>hdr-csp-unsafe</td><td>CSP allows unsafe-inline or unsafe-eval</td><td class=''>clean / not applicable</td></tr><tr><td>hdr-hsts</td><td>Strict-Transport-Security missing</td><td class=''>clean / not applicable</td></tr><tr><td>hdr-nosniff</td><td>X-Content-Type-Options missing</td><td class='ok'>FIRED</td></tr><tr><td>hdr-obsolete</td><td>Obsolete pinning/CT header present</td><td class=''>clean / not applicable</td></tr><tr><td>hdr-permissions</td><td>Permissions-Policy missing</td><td class='ok'>FIRED</td></tr><tr><td>hdr-referrer</td><td>Referrer-Policy missing</td><td class='ok'>FIRED</td></tr><tr><td>hdr-x-powered</td><td>Framework fingerprint header present</td><td class='ok'>FIRED</td></tr><tr><td>hdr-xss-legacy</td><td>X-XSS-Protection set to an unsafe value</td><td class=''>clean / not applicable</td></tr><tr><td>host-header</td><td>Untrusted Host/X-Forwarded-Host reaches output</td><td class='ok'>FIRED</td></tr><tr><td>jwt-alg-none</td><td>JWT issued with alg=none</td><td class=''>clean / not applicable</td></tr><tr><td>jwt-long-life</td><td>JWT expiration is very long</td><td class=''>clean / not applicable</td></tr><tr><td>jwt-no-exp</td><td>JWT has no expiration claim</td><td class='ok'>FIRED</td></tr><tr><td>jwt-weak-secret</td><td>JWT signed with a guessable secret</td><td class='ok'>FIRED</td></tr><tr><td>method-put</td><td>Write methods accepted (PUT/DELETE)</td><td class='ok'>FIRED</td></tr><tr><td>method-trace</td><td>HTTP TRACE enabled</td><td class='ok'>FIRED</td></tr><tr><td>mixed-content</td><td>Mixed content on an HTTPS page</td><td class=''>clean / not applicable</td></tr><tr><td>no-tls</td><td>Site served over plain HTTP</td><td class='ok'>FIRED</td></tr><tr><td>ratelimit-login</td><td>No rate limit observed on login</td><td class='ok'>FIRED</td></tr><tr><td>redirect-open</td><td>Open redirect</td><td class='ok'>FIRED</td></tr><tr><td>robots-disclosure</td><td>robots.txt reveals sensitive paths</td><td class='ok'>FIRED</td></tr><tr><td>sec-txt-missing</td><td>security.txt missing</td><td class='ok'>FIRED</td></tr><tr><td>secret-leak</td><td>Secret or live API key shipped to the browser</td><td class='ok'>FIRED</td></tr><tr><td>sqli-boolean</td><td>Possible SQL injection (boolean differential)</td><td class='ok'>FIRED</td></tr><tr><td>sqli-error</td><td>SQL injection (database error revealed)</td><td class='ok'>FIRED</td></tr><tr><td>sri-missing</td><td>Third-party script without Subresource Integrity</td><td class='ok'>FIRED</td></tr><tr><td>subdomain-dangling</td><td>Certificate-log subdomain no longer resolves</td><td class=''>clean / not applicable</td></tr><tr><td>tls-expiry</td><td>TLS certificate expiring soon</td><td class=''>clean / not applicable</td></tr><tr><td>tls-legacy</td><td>Legacy TLS protocol accepted</td><td class=''>clean / not applicable</td></tr><tr><td>tls-unverified</td><td>TLS certificate not trusted or mismatched</td><td class=''>clean / not applicable</td></tr><tr><td>traversal</td><td>Path traversal</td><td class='ok'>FIRED</td></tr><tr><td>xss-reflected</td><td>Reflected cross-site scripting</td><td class='ok'>FIRED</td></tr></table></div>
-<div><h2>Recon</h2><table><tr><th>Item</th><th>Value</th></tr><tr><td>target</td><td>http://127.0.0.1:8931/</td></tr><tr><td>status</td><td>200</td></tr><tr><td>server</td><td>nginx/1.18.0 </td></tr><tr><td>ip</td><td>127.0.0.1</td></tr><tr><td>requests budget</td><td>1/400</td></tr><tr><td>robots.txt</td><td>4 lines</td></tr><tr><td>sitemap.xml</td><td>parsed</td></tr><tr><td>page</td><td>http://127.0.0.1:8931/ :: Quant IQ QA</td></tr><tr><td>page</td><td>http://127.0.0.1:8931/assets/ :: Index of /assets</td></tr><tr><td>page</td><td>http://127.0.0.1:8931/item?id=1 :: Item</td></tr><tr><td>page</td><td>http://127.0.0.1:8931/login :: Login</td></tr><tr><td>page</td><td>http://127.0.0.1:8931/search?q=hello :: Search</td></tr><tr><td>js assets scanned</td><td>1</td></tr><tr><td>endpoints mined from js</td><td>2</td></tr><tr><td>wayback</td><td>off (add --wayback)</td></tr><tr><td>ct-log</td><td>off (add --ct-log)</td></tr><tr><td>server version</td><td>nginx/1.18.0 </td></tr></table>
-<h2>Engine notes</h2><ul class="muted"><li>mode: active (scenario full)</li><li>request error http://127.0.0.1:8931/redirect?to=%2Fhome+AND+1%3D1: InvalidURL: URL can&#x27;t contain control characters. &#x27;/home AND 1=1&#x27; (found at least &#x27; &#x27;)</li><li>request error http://127.0.0.1:8931/redirect?to=%2Fhome+AND+1%3D2: InvalidURL: URL can&#x27;t contain control characters. &#x27;/home AND 1=2&#x27; (found at least &#x27; &#x27;)</li><li>request error http://127.0.0.1:8931/redirect?to=%2Fhome%3B+echo+QX5907d2b2cc: InvalidURL: URL can&#x27;t contain control characters. &#x27;/home; echo QX5907d2b2cc&#x27; (found at least &#x27; &#x27;)</li><li>request error http://127.0.0.1:8931/redirect?to=%2Fhome+%7C+echo+QX2f13a9994b: InvalidURL: URL can&#x27;t contain control characters. &#x27;/home | echo QX2f13a9994b&#x27; (found at least &#x27; &#x27;)</li><li>request error http://127.0.0.1:8931/redirect?to=%2Fhome+%26%26+echo+QX801549f265: InvalidURL: URL can&#x27;t contain control characters. &#x27;/home &amp;&amp; echo QX801549f265&#x27; (found at least &#x27; &#x27;)</li><li>http://127.0.0.1:8931/transfer: no CSRF token and no SameSite cookie attribute</li><li>http://127.0.0.1:8931/login: no CSRF token and no SameSite cookie attribute</li></ul></div>
+<div><h2>Recon</h2><table><tr><th>Item</th><th>Value</th></tr><tr><td>target</td><td>http://127.0.0.1:8931/</td></tr><tr><td>status</td><td>200</td></tr><tr><td>server</td><td>nginx/1.18.0 </td></tr><tr><td>ip</td><td>127.0.0.1</td></tr><tr><td>requests budget</td><td>1/400</td></tr><tr><td>robots.txt</td><td>4 lines</td></tr><tr><td>sitemap.xml</td><td>parsed</td></tr><tr><td>page</td><td>http://127.0.0.1:8931/ :: placeholder_website QA</td></tr><tr><td>page</td><td>http://127.0.0.1:8931/assets/ :: Index of /assets</td></tr><tr><td>page</td><td>http://127.0.0.1:8931/item?id=1 :: Item</td></tr><tr><td>page</td><td>http://127.0.0.1:8931/login :: Login</td></tr><tr><td>page</td><td>http://127.0.0.1:8931/search?q=hello :: Search</td></tr><tr><td>js assets scanned</td><td>1</td></tr><tr><td>endpoints mined from js</td><td>2</td></tr><tr><td>wayback</td><td>off (add --wayback)</td></tr><tr><td>ct-log</td><td>off (add --ct-log)</td></tr><tr><td>server version</td><td>nginx/1.18.0 </td></tr></table>
+<h2>Engine notes</h2><ul class="muted"><li>mode: active (scenario full)</li><li>request error http://127.0.0.1:8931/redirect?to=%2Fhome+AND+1%3D1: InvalidURL: URL can&#x27;t contain control characters. &#x27;/home AND 1=1&#x27; (found at least &#x27; &#x27;)</li><li>request error http://127.0.0.1:8931/redirect?to=%2Fhome+AND+1%3D2: InvalidURL: URL can&#x27;t contain control characters. &#x27;/home AND 1=2&#x27; (found at least &#x27; &#x27;)</li><li>request error http://127.0.0.1:8931/redirect?to=%2Fhome%3B+echo+QX40cc9be330: InvalidURL: URL can&#x27;t contain control characters. &#x27;/home; echo QX40cc9be330&#x27; (found at least &#x27; &#x27;)</li><li>request error http://127.0.0.1:8931/redirect?to=%2Fhome+%7C+echo+QX248c511709: InvalidURL: URL can&#x27;t contain control characters. &#x27;/home | echo QX248c511709&#x27; (found at least &#x27; &#x27;)</li><li>request error http://127.0.0.1:8931/redirect?to=%2Fhome+%26%26+echo+QX90c83ae3d6: InvalidURL: URL can&#x27;t contain control characters. &#x27;/home &amp;&amp; echo QX90c83ae3d6&#x27; (found at least &#x27; &#x27;)</li><li>http://127.0.0.1:8931/transfer: no CSRF token and no SameSite cookie attribute</li><li>http://127.0.0.1:8931/login: no CSRF token and no SameSite cookie attribute</li></ul></div>
 </div>
 <h2>Method and safety rails</h2>
 <p class="muted">Scope gate: every request host must match the allowlist, or it is

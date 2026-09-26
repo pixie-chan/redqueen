@@ -58,7 +58,7 @@ STRONG_INDEX = INDEX_BODY.replace(
           "integrity='sha384-QAtest'></script>").replace(
     "<script>//# sourceMappingURL=/assets/app.js.map</script>", "")
 
-JS_WEAK = """// quantiq client build
+JS_WEAK = """// placeholder_website client build
 const KEY = "AKIAIOSFODNN7EXAMPLE";
 const PAY = "sk_live_51H8xY2eZvKYlo2Cdeadbeef";
 fetch('/api/v1/portfolio?id=123');
@@ -66,7 +66,7 @@ axios.get('/api/v1/prices');
 //# sourceMappingURL=/assets/app.js.map
 """
 
-JS_STRONG = """// quantiq client build
+JS_STRONG = """// placeholder_website client build
 fetch('/api/v1/portfolio?id=123');
 axios.get('/api/v1/prices');
 """

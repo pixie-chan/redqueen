@@ -15,7 +15,7 @@ def terminal_report(bot, use_color):
     c = use_color
     line = "─" * 72
     out.append(colorize("╭" + line + "╮", "dim", c))
-    title = " RED TEAM REPORT  ·  Quant IQ self-assault "
+    title = " RED TEAM REPORT  ·  placeholder_website self-assault "
     out.append(colorize("│", "dim", c) + colorize(title.center(72), "bold", c)
                + colorize("│", "dim", c))
     out.append(colorize("╰" + line + "╯", "dim", c))

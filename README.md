@@ -132,7 +132,7 @@ Built into the engine, not into the documentation.
 | Rate limit | 5 req/s with jitter, hard request budget (default 500) |
 | Payload policy | canaries, error signatures, echo markers. No floods, no brute force, no data writes, ever |
 | Private IPs | refused unless `--local` (127.0.0.1 only) |
-| Identity | User-Agent announces `QuantIQRedTeamBot/1.0 (authorized self-testing)` |
+| Identity | User-Agent announces `placeholder_websiteRedTeamBot/1.0 (authorized self-testing)` |
 | robots.txt | honored during discovery (`--ignore-robots` overrides, logged in report) |
 | External sources | Wayback / crt.sh / Cert Spotter only via `--wayback` / `--ct-log`, GET-only, read-only |
 | Failure handling | a crashing check degrades to a note, the report still ships |

@@ -55,7 +55,7 @@
             if MODE == "weak" and xfh:
                 body += (f"<footer><a href=\"http://{xfh}/reset-password\">"
                          f"Reset password</a></footer>")
-            self.raw(html("Quant IQ QA", body))
+            self.raw(html("placeholder_website QA", body))
             return
 
         if path == "/login":
@@ -93,7 +93,7 @@
             exposed = {
                 "/.git/HEAD": ("ref: refs/heads/main\n", "text/plain"),
                 "/.env": ("SECRET_KEY=hunter2\nDB_PASSWORD=hunter2\n", "text/plain"),
-                "/package.json": ('{"name":"quantiq","dependencies":{"express":"^4.0.0"}}',
+                "/package.json": ('{"name":"placeholder_website","dependencies":{"express":"^4.0.0"}}',
                                   "application/json"),
                 "/config.json": ('{"db":{"password":"hunter2"}}', "application/json"),
                 "/.aws/credentials": ("[default]\naws_access_key_id = AKIAFAKE\n",
@@ -167,7 +167,7 @@
 
         if path == "/openapi.json":
             if MODE == "weak":
-                self.raw('{"openapi":"3.0.0","info":{"title":"quantiq api"}}',
+                self.raw('{"openapi":"3.0.0","info":{"title":"placeholder_website api"}}',
                          ctype="application/json")
                 return
             self._notfound()

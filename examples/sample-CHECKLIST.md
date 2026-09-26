@@ -32,7 +32,7 @@ Work top to bottom. Re-run the bot after each fix and watch the score move.
       fix: serve the site over HTTPS only and set Secure on every session cookie
 - [ ] **CORS reflects arbitrary Origin** (A01) `http://127.0.0.1:8931/`
       fix: allowlist exact origins server-side, never echo the request Origin; keep Access-Control-Allow-Credentials off unless required
-- [ ] **Stack trace or debug page exposed** (A10) `http://127.0.0.1:8931/qx-err-ed91cffc`
+- [ ] **Stack trace or debug page exposed** (A10) `http://127.0.0.1:8931/qx-err-49afc947`
       fix: return generic errors with a correlation ID, keep traces in protected logs, disable debug mode in production
 - [ ] **Admin interface reachable from the internet** (A02) `http://127.0.0.1:8931/phpmyadmin/`
       fix: bind admin panels to localhost or a VPN, add IP allowlisting plus MFA, remove them from public DNS

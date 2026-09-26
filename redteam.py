@@ -33,7 +33,7 @@ from html.parser import HTMLParser
 import http.client
 
 VERSION = "1.1.0"
-UA = "QuantIQRedTeamBot/1.0 (authorized self-testing)"
+UA = "placeholder_websiteRedTeamBot/1.0 (authorized self-testing)"
 SEV_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "INFO": 4}
 SEV_COLOR = {"CRITICAL": "#ff2d55", "HIGH": "#ff6b35", "MEDIUM": "#ffb020",
              "LOW": "#4aa3ff", "INFO": "#7d8590"}
@@ -1131,7 +1131,7 @@ def iter_jwt(bot):
 
 def check_jwt(bot):
     weak_secrets = ["secret", "password", "changeme", "qwerty", "123456",
-                    "quantiq", "quant-iq", "jwtsecret", "mysecret", "key",
+                    "placeholder_website", "placeholder_website", "jwtsecret", "mysecret", "key",
                     bot.t.host, bot.t.host.split(".")[0]]
     for tok in iter_jwt(bot):
         parts = tok.split(".")
@@ -1757,7 +1757,7 @@ def terminal_report(bot, use_color):
     c = use_color
     line = "─" * 72
     out.append(colorize("╭" + line + "╮", "dim", c))
-    title = " RED TEAM REPORT  ·  Quant IQ self-assault "
+    title = " RED TEAM REPORT  ·  placeholder_website self-assault "
     out.append(colorize("│", "dim", c) + colorize(title.center(72), "bold", c)
                + colorize("│", "dim", c))
     out.append(colorize("╰" + line + "╯", "dim", c))

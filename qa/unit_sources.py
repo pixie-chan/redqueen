@@ -18,22 +18,22 @@ ns = argparse.Namespace(cookie=None, respect_robots=True, max_pages=5,
                         max_requests=50, timeout=5, insecure=False,
                         local=True, deep_traversal=False,
                         traversal_canary=None)
-t = rt.Transport("http://demo.quantiq.test", ["demo.quantiq.test"],
+t = rt.Transport("http://demo.placeholder_website.test", ["demo.placeholder_website.test"],
                  5, 50, 5, False, False)
 bot = rt.Bot(t, ns)
 
 # wayback: in-scope queued, out-of-scope dropped
 rows = [["original"],
-        ["http://demo.quantiq.test/keep", "http://evil.example/drop"]]
+        ["http://demo.placeholder_website.test/keep", "http://evil.example/drop"]]
 t.request_external = lambda url, cap=0, timeout=0: (
     200, json.dumps(rows).encode())
 bot._wayback()
-assert "http://demo.quantiq.test/keep" in bot.urls, "in-scope url not queued"
+assert "http://demo.placeholder_website.test/keep" in bot.urls, "in-scope url not queued"
 assert "http://evil.example/drop" not in bot.urls, "out-of-scope url leaked"
 
 # ct-log: wildcard stripped, unresolved name reported, resolved name quiet
 crt = [{"name_value":
-        "ghost.demo.quantiq.test\nwww.demo.quantiq.test\n*.demo.quantiq.test"}]
+        "ghost.demo.placeholder_website.test\nwww.demo.placeholder_website.test\n*.demo.placeholder_website.test"}]
 t.request_external = lambda url, cap=0, timeout=0: (
     200, json.dumps(crt).encode())
 
@@ -62,7 +62,7 @@ def fail_crt_then_ok(url, cap=0, timeout=0):
     if "crt.sh" in url:
         raise RuntimeError("HTTP 502")
     return 200, json.dumps(
-        [{"dns_names": ["a.demo.quantiq.test", "evil.example"]}]).encode()
+        [{"dns_names": ["a.demo.placeholder_website.test", "evil.example"]}]).encode()
 
 
 t.request_external = fail_crt_then_ok
@@ -71,7 +71,7 @@ with mock.patch("socket.getaddrinfo",
                     socket.gaierror(-2, "NXDOMAIN"))):
     bot2._ct_log()
 assert len(calls) == 2 and "certspotter" in calls[1], "fallback not used"
-assert any("a.demo.quantiq.test" in f["url"] for f in bot2.findings), \
+assert any("a.demo.placeholder_website.test" in f["url"] for f in bot2.findings), \
     "certspotter names not processed"
 assert not any("evil.example" in f["url"] for f in bot2.findings), \
     "foreign domain leaked from certspotter"

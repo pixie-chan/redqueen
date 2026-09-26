@@ -2,7 +2,7 @@
 > Raw delegated tranches (4 files, 137KB) stay local in
 > `~/research/redteam-bot/tranches/`.
 
-# Cybersecurity Research for the Quant IQ Red Team Bot
+# Cybersecurity Research for the placeholder_website Red Team Bot
 
 Purpose: authorize-and-attack-own-site research. Every load-bearing claim carries a
 source URL. Tranche 0 = verified by me directly against primary sources today.

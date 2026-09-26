@@ -1,4 +1,4 @@
-# SPEC: Quant IQ Red Team Bot (redteam.py)
+# SPEC: placeholder_website Red Team Bot (redteam.py)
 
 Single-file, stdlib-only, Python 3.14. Simulates attacks against a site YOU own so
 you can find and fix the holes yourself. Authorized-testing only, enforced in code.
@@ -17,12 +17,12 @@ you can find and fix the holes yourself. Authorized-testing only, enforced in co
    probes. No floods, no time-based DoS, no data modification, no credential
    guessing (lockout/rate-limit test uses N=10 gentle requests max), GET/HEAD
    default, POST only against discovered form endpoints with benign bodies.
-6. Identifiable UA: "QuantIQRedTeamBot/1.0 (+authorized self-testing)".
+6. Identifiable UA: "placeholder_websiteRedTeamBot/1.0 (+authorized self-testing)".
 7. robots.txt respected during discovery unless --ignore-robots (logged in report).
 
 ## 1. CLI
 
-  python3 redteam.py --target https://quantiq.example --allow quantiq.example \
+  python3 redteam.py --target https://placeholder_website.example --allow placeholder_website.example \
       --i-own-this [--scenario recon|headers|misconfig|injection|auth|full] \
       [--rps 5] [--max-requests 500] [--local] [--cookie 'sess=...'] \
       [--report out/report.html] [--json out/report.json] [--list-checks] [--quiet]

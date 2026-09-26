@@ -191,7 +191,7 @@ def iter_jwt(bot):
 
 def check_jwt(bot):
     weak_secrets = ["secret", "password", "changeme", "qwerty", "123456",
-                    "quantiq", "quant-iq", "jwtsecret", "mysecret", "key",
+                    "placeholder_website", "placeholder_website", "jwtsecret", "mysecret", "key",
                     bot.t.host, bot.t.host.split(".")[0]]
     for tok in iter_jwt(bot):
         parts = tok.split(".")
