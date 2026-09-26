@@ -96,7 +96,9 @@ STRONG_INDEX = INDEX_BODY.replace(
 JS_WEAK = """// placeholder_website client build
 // The scanner reads served text verbatim, so the fixture must be one
 // unbroken token. These are synthetic QA values, not real credentials.
-const KEY = "AKIAIOQXZQMPLE7X4K2B";
+// Synthetic QA fixture, 20 chars, AWS-key shaped, deliberately
+// obvious: the masking gates need a real shape to match against.
+const KEY = "AKIAZZNOTAREALKEYXXX";
 const PAY = "sk_livQXZQbeef7X4K2B";
 fetch('/api/v1/portfolio?id=123');
 axios.get('/api/v1/prices');

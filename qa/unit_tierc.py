@@ -27,7 +27,9 @@ LINK_FAMILIES = ["cwe.mitre.org", "cwesubmission.mitre.org", "kb.cert.org",
                  "certcc.github.io"]
 PHRASE = "name the mechanism rather than inventing a class"
 # 20-char AWS-shaped QA fixture. Synthetic, not a real key.
-AKIA = "AKIAIOQXZQMPLE7X4K2B"
+# Synthetic QA fixture, 20 chars, AWS-key shaped, deliberately
+# obvious. Not a real key.
+AKIA = "AKIAZZNOTAREALKEYXXX"
 # GitHub-token fixtures are assembled from an obviously synthetic
 # pattern so a credential-shaped literal never lands in git history
 # and trips push protection. The value keeps the real 36-char
