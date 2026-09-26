@@ -11,9 +11,13 @@ import subprocess
 import sys
 import time
 
-ROOT = os.environ.get("RT_ROOT", "/home/zen/projects/redteam-bot")
+# Resolve from this file so the suite runs anywhere (CI, another clone, a
+# container). RT_ROOT and RT_SCRATCH still override when set.
+ROOT = os.environ.get("RT_ROOT") or os.path.dirname(
+    os.path.dirname(os.path.abspath(__file__)))
 QA = os.path.join(ROOT, "qa")
-SCRATCH = os.environ.get("RT_SCRATCH", "/home/zen/.hermes/cache/scratch")
+SCRATCH = os.environ.get("RT_SCRATCH") or os.path.join(
+    ROOT, ".qa-scratch")
 BOT = os.path.join(ROOT, "redteam.py")
 HARNESS = os.path.join(QA, "qx_harness.py")
 PORT = int(os.environ.get("RT_PORT", "8931"))

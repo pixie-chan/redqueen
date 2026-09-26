@@ -5,3 +5,4 @@ rt-report-*/
 qa/cert.pem
 qa/key.pem
 .DS_Store
+.qa-scratch/

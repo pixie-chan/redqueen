@@ -18,7 +18,8 @@ import shutil
 import subprocess
 import sys
 
-ROOT = "/home/zen/projects/redteam-bot"
+ROOT = os.environ.get("RT_ROOT") or os.path.dirname(
+    os.path.dirname(os.path.abspath(__file__)))
 BOT = os.path.join(ROOT, "redteam.py")
 TMP = os.path.join(ROOT, "qa", ".tierc-tmp")
 

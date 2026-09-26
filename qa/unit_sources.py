@@ -5,11 +5,14 @@ touching the internet. Exit 0 = pass."""
 import argparse
 import importlib.util
 import json
+import os
 import socket
 from unittest import mock
 
 spec = importlib.util.spec_from_file_location(
-    "rt", "/home/zen/projects/redteam-bot/redteam.py")
+    "rt", os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "redteam.py"))
 rt = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(rt)
 
