@@ -44,7 +44,7 @@ def main():
     subs = [
         (r"v\d+\.\d+\.\d+", "v" + version),
         (r"version-\d+\.\d+\.\d+", "version-" + version),
-        (r"checks-\d+(?=\")", "checks-%d" % checks),
+        (r"checks-\d+", "checks-%d" % checks),
         (r"\b\d+ checks\b", "%d checks" % checks),
         (r"\b\d{1,3},\d{3}\b( lines)?", nums + (r"\1" if False else "")),
         (r"\b\d+ groups\b", "%d groups" % groups),
