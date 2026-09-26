@@ -8,12 +8,14 @@ the QA gate count from the assertions actually present in qa/qa.py.
 """
 import glob
 import importlib.util
+import os
 import re
 import sys
 
-ROOT = "/home/zen/projects/redteam-bot"
-BOT = ROOT + "/redteam.py"
-QA = ROOT + "/qa/qa.py"
+# Resolve from this file so it works on any machine and on CI.
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BOT = os.path.join(ROOT, "redteam.py")
+QA = os.path.join(ROOT, "qa", "qa.py")
 
 
 def measure():
