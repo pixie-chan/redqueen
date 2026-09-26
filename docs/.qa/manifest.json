@@ -1,0 +1,36 @@
+{
+  "file": "/home/zen/projects/redteam-bot/docs/ARCHITECTURE.html",
+  "direction": "industrial-dossier",
+  "project": "redqueen",
+  "date": "2026-09-26",
+  "gate_summary": {
+    "G0  TOPIC-DIRECT": "NO-TOKEN",
+    "G0A REFS": "NO-TOKEN",
+    "G0B LEDGER": "PASS",
+    "G1  CRAFT": "WARN",
+    "G2  BUILD": "PASS",
+    "G3  GUARD": "PASS",
+    "G4  CONTRAST": "PASS",
+    "G4A A11Y": "PASS",
+    "G5  VISUAL": "PASS",
+    "G17 COMPOSE": "PASS",
+    "G6  CROSS": "SKIP",
+    "G7  PERF": "PASS",
+    "G8  INTERACTION": "PASS",
+    "G9  GLYPH": "PASS",
+    "G10 LOOP": "PASS",
+    "G11 CONCEPT": "NO-TOKEN",
+    "G12 MOTION": "PASS",
+    "G13 COPY": "WARN",
+    "G14 META": "PASS",
+    "G15 ASSETS": "PASS",
+    "G16 STATES": "PASS",
+    "G18 ITER": "WARN"
+  },
+  "shots": [
+    "/home/zen/projects/redteam-bot/docs/.qa/ui-gate-01-1280x900.png",
+    "/home/zen/projects/redteam-bot/docs/.qa/ui-gate-01-1280x900-scrolled.png",
+    "/home/zen/projects/redteam-bot/docs/.qa/ui-gate-02-375x812.png",
+    "/home/zen/projects/redteam-bot/docs/.qa/ui-gate-02-375x812-scrolled.png"
+  ]
+}

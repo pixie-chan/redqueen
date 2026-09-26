@@ -10,6 +10,10 @@ artifact, sky blue = external source, dashed red = forbidden class.
 Rendered PNGs live in `diagrams/` (Mermaid source in each `diagrams/*.mmd`,
 re-render with `sh docs/render.sh`).
 
+Premium hand-built version of the same six figures:
+`ARCHITECTURE.html` (rebuild with `python3 docs/build-arch-html.py`,
+standalone SVGs in `diagrams/svg/`).
+
 ## 1. Run flow · what happens when you execute one scan
 
 Scope gate first, reports always ship, even on early stop.

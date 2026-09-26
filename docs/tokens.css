@@ -1,0 +1,22 @@
+:root {
+  --bg:#0b0d11;
+  --surface:#12161e;
+  --surface-2:#171c26;
+  --line:#262d3a;
+  
+--line-2:#3a4356;
+  --ink:#e7eaf0;
+  --ink-2:#aeb6c4;
+  --ink-3:#7b8494;
+  
+--accent:#d9a45f;
+  --red:#cf5c63;
+  --green:#6fae8f;
+  --teal:#69a8a3;
+  
+--mono:"JetBrains Mono",monospace;
+  --sans:"Archivo",system-ui,sans-serif;
+  
+--r:4px;
+  --w:1120px
+}

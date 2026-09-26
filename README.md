@@ -129,7 +129,12 @@ Six focused diagrams, rendered images, Mermaid source in each `.mmd`:
 | 5 | [Safety rails](docs/diagrams/05-safety-rails.png) | the gates every request passes, forbidden payloads |
 | 6 | [QA loop](docs/diagrams/06-qa-loop.png) | harness modes into 16 assertion gates |
 
-Full annotated write-up with Mermaid sources: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Premium view: **[docs/ARCHITECTURE.html](docs/ARCHITECTURE.html)**, a
+graphite + amber dossier with six hand-built SVG figures (title strips,
+leader-line annotations, Archivo + JetBrains Mono). Built by
+`docs/build-arch-html.py`, QA-gated with ui-gate (exit 0).
+
+Mermaid sources + PNG renders: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 | The codebase, in one picture |
 |---|

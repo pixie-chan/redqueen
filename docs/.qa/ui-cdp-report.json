@@ -1,0 +1,257 @@
+{
+  "file": "/home/zen/projects/redteam-bot/docs/ARCHITECTURE.html",
+  "viewports": [
+    {
+      "viewport": "1280x900",
+      "overflow_px": 0,
+      "overflow_ok": true,
+      "overflow_offenders": [],
+      "touch_targets_small": [],
+      "hidden_content": [],
+      "screenshot": "/home/zen/projects/redteam-bot/docs/.qa/ui-gate-01-1280x900.png",
+      "scroll_geom": {
+        "doc_h": 7372,
+        "inner_h": 900,
+        "frac": 0.45,
+        "target_y": 2912,
+        "y": 2912,
+        "off_by": 0,
+        "attempts": 1
+      },
+      "screenshot_scrolled": "/home/zen/projects/redteam-bot/docs/.qa/ui-gate-01-1280x900-scrolled.png"
+    },
+    {
+      "viewport": "375x812",
+      "overflow_px": 0,
+      "overflow_ok": true,
+      "overflow_offenders": [],
+      "touch_targets_small": [],
+      "hidden_content": [],
+      "screenshot": "/home/zen/projects/redteam-bot/docs/.qa/ui-gate-02-375x812.png",
+      "scroll_geom": {
+        "doc_h": 7631,
+        "inner_h": 812,
+        "frac": 0.45,
+        "target_y": 3069,
+        "y": 3069,
+        "off_by": 0,
+        "attempts": 1
+      },
+      "screenshot_scrolled": "/home/zen/projects/redteam-bot/docs/.qa/ui-gate-02-375x812-scrolled.png"
+    }
+  ],
+  "checks": {
+    "host_load": {
+      "load1": 1.12,
+      "load5": 0.79,
+      "cpus": 20
+    },
+    "tag_balance": {
+      "ok": true,
+      "errors": []
+    },
+    "dup_ids": {
+      "ok": true,
+      "dups": []
+    },
+    "page_load": {
+      "ok": true,
+      "url": "file:///home/zen/projects/redteam-bot/docs/ARCHITECTURE.html"
+    },
+    "font_settle": {
+      "state": "loaded,0,0",
+      "grace_s": 6.0
+    },
+    "motion_settle": {
+      "waited_steps": 7,
+      "grace_steps": 24
+    },
+    "live_motion": {
+      "animations": 1,
+      "running": 0,
+      "interval_timer": false,
+      "frozen": false
+    },
+    "window_errors": {
+      "ok": true,
+      "count": 0
+    },
+    "page_title": "redteam.py \u00b7 architecture dossier",
+    "final_url": "file:///home/zen/projects/redteam-bot/docs/ARCHITECTURE.html",
+    "console_errors": [],
+    "page_errors": [],
+    "failed_requests": [],
+    "small_text_by_viewport": {
+      "1280x900": [],
+      "375x812": [
+        "DIV.scrollhint 11.5px 328x18",
+        "DIV.scrollhint 11.5px 328x18",
+        "DIV.scrollhint 11.5px 328x18",
+        "DIV.scrollhint 11.5px 328x18",
+        "DIV.scrollhint 11.5px 328x18",
+        "DIV.scrollhint 11.5px 328x18"
+      ]
+    },
+    "headline_above_fold": {
+      "1280x900": true,
+      "375x812": false
+    },
+    "contrast_by_viewport": {
+      "1280x900": {
+        "checked": 232,
+        "failures": [],
+        "samples": []
+      },
+      "375x812": {
+        "checked": 238,
+        "failures": [],
+        "samples": []
+      }
+    },
+    "typography_by_viewport": {
+      "1280x900": {
+        "fonts": [],
+        "body_line_length": {
+          "selector": "lede",
+          "lengths": [
+            87,
+            80,
+            81,
+            67
+          ],
+          "median": 81,
+          "min": 67,
+          "max": 87
+        },
+        "body_style": {
+          "fontFamily": "Archivo, system-ui, sans-serif",
+          "fontSize": "16.96px",
+          "lineHeight": "27.136px",
+          "maxWidth": "621.132px"
+        }
+      },
+      "375x812": {
+        "fonts": [],
+        "body_line_length": {
+          "selector": "lede",
+          "lengths": [
+            43,
+            44,
+            36,
+            42,
+            42,
+            44,
+            36,
+            24
+          ],
+          "median": 42,
+          "min": 24,
+          "max": 44
+        },
+        "body_style": {
+          "fontFamily": "Archivo, system-ui, sans-serif",
+          "fontSize": "16.96px",
+          "lineHeight": "27.136px",
+          "maxWidth": "621.132px"
+        }
+      }
+    },
+    "route_requests": {
+      "1280x900": [],
+      "375x812": []
+    },
+    "composition": {
+      "equal_weight_groups": [],
+      "centered_text_ratio": 0,
+      "centered_examples": [],
+      "centered_text_blocks": 0,
+      "text_blocks": 12,
+      "gap_distinct": 30,
+      "gap_dominant_share": 0.426,
+      "gaps_seen": 155,
+      "gap_histogram": {
+        "4": 66,
+        "8": 11,
+        "12": 7,
+        "16": 7,
+        "24": 2,
+        "32": 2,
+        "36": 3,
+        "44": 10,
+        "48": 3,
+        "56": 2,
+        "60": 4,
+        "64": 1,
+        "68": 6,
+        "72": 5,
+        "76": 3,
+        "88": 4,
+        "92": 1,
+        "96": 1,
+        "112": 2,
+        "120": 1,
+        "124": 1,
+        "128": 3,
+        "136": 1,
+        "144": 2,
+        "152": 1,
+        "168": 2,
+        "192": 1,
+        "196": 1,
+        "236": 1,
+        "284": 1
+      },
+      "dominance_min": null,
+      "dominance_where": null,
+      "dominance_samples": 0,
+      "fill_median": 0.972,
+      "fill_samples": 22,
+      "void_examples": [],
+      "size_levels": 5,
+      "weight_levels": 3,
+      "sizes": [
+        12,
+        13,
+        14,
+        15,
+        23
+      ],
+      "weights": [
+        "400",
+        "600",
+        "700"
+      ],
+      "viewport_width": 1265
+    },
+    "webfonts": {
+      "requested": [],
+      "declared": [],
+      "missing": [],
+      "fonts_ready": "loaded",
+      "font_face_count": 0
+    },
+    "state_css": {
+      "ok": true,
+      "hoverRules": 2,
+      "activeRules": 0,
+      "focusVisibleRules": 2,
+      "reducedMotionBlocks": 1,
+      "totalRules": 38
+    },
+    "interaction": {
+      "ok": true,
+      "clicks": [],
+      "keys": []
+    }
+  },
+  "screenshots": [
+    "/home/zen/projects/redteam-bot/docs/.qa/ui-gate-01-1280x900.png",
+    "/home/zen/projects/redteam-bot/docs/.qa/ui-gate-01-1280x900-scrolled.png",
+    "/home/zen/projects/redteam-bot/docs/.qa/ui-gate-02-375x812.png",
+    "/home/zen/projects/redteam-bot/docs/.qa/ui-gate-02-375x812-scrolled.png"
+  ],
+  "fails": [
+    "small_text@375x812",
+    "headline_above_fold@375x812"
+  ]
+}
