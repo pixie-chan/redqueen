@@ -32,21 +32,6 @@ jobs:
       - name: Build the single file from parts
         run: ./build.sh
 
-      # the project supports 3.10+; the report f-strings once broke on <3.12,
-      # so a compile matrix is the cheapest regression guard against that
-      - name: Compile on every supported interpreter
-        run: |
-          set -e
-          for v in 3.10 3.11 3.12 3.13; do
-            echo "== python $v"
-            if ! uv python find "$v" >/dev/null 2>&1; then
-              uv python install "$v"
-            fi
-            PY="$(uv python find "$v")"
-            echo "   using $PY"
-            "$PY" -m py_compile redteam.py
-          done
-
       - name: Run the QA suite
         run: python3 qa/qa.py
 
@@ -75,3 +60,26 @@ jobs:
 
       - name: Surface inventory
         run: python3 redteam.py --list-checks
+
+  # The project claims 3.10+ support and once shipped a report f-string that
+  # only parsed on 3.12+, so every supported interpreter must compile it.
+  # A matrix job is the reliable form: uv is not preinstalled on the runner.
+  compile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Build
+        run: ./build.sh
+
+      - name: Compile on this interpreter
+        run: python -m py_compile redteam.py
