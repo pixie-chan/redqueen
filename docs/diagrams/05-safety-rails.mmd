@@ -1,12 +1,26 @@
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"DejaVu Sans, Helvetica, sans-serif","fontSize":"14px","lineColor":"#64748b","clusterBkg":"#f8fafc","clusterBorder":"#cbd5e1"}}}%%
 flowchart TD
-    Q["outgoing request"] --> G1{"host matches<br/>--allow?"}
-    G1 -- "no" --> K1["blocked: never sent"]
-    G1 -- "yes" --> G2{"budget left?"}
-    G2 -- "no" --> K2["BudgetExceeded:<br/>stop, report ships"]
-    G2 -- "yes" --> G3["throttle<br/>5 req/s + jitter"]
-    G3 --> G4{"robots disallow?<br/>(crawl phase)"}
-    G4 -- "yes" --> K3["path skipped"]
-    G4 -- "no" --> PL["payload policy"]
-    PL --> OKA["ALLOWED<br/>canaries, echo markers,<br/>error signatures, benign GET/POST"]
-    PL --> NOA["NOT IMPLEMENTED<br/>DoS, brute force, data writes,<br/>destructive SQL, shell exec"]
-    OWN["--i-own-this required<br/>for active groups"] -. gates .-> G1
+    T["SAFETY RAILS · every request<br/>amber gate · red blocked · orange degraded · green allowed · dashed red forbidden"]:::title ~~~ Q(["outgoing request"]):::cli
+    Q --> G1{"host matches allowlist?"}:::gate
+    G1 -->|no| K1["blocked<br/>never sent"]:::bad
+    G1 -->|yes| G2{"budget left?"}:::gate
+    G2 -->|no| K2["budget exhausted<br/>stop · report still ships"]:::warn
+    G2 -->|yes| G3["throttle<br/>5 req/s + jitter"]:::engine
+    G3 --> G4{"robots disallow?<br/>crawl phase"}:::gate
+    G4 -->|yes| K3["path skipped<br/>robots rule"]:::warn
+    G4 -->|no| PL{"payload class<br/>benign?"}:::gate
+    PL -->|benign| OKA["ALLOWED<br/>canaries · echo markers<br/>error signatures · benign GET/POST"]:::good
+    PL -->|destructive| NOA["NOT IMPLEMENTED<br/>DoS · brute force · data writes<br/>destructive SQL · shell exec"]:::forbidden
+    OWN["ownership flag required<br/>before active groups run"]:::ext -.-> G1
+
+    classDef title fill:#0f172a,stroke:#0f172a,color:#f8fafc
+    classDef cli fill:#e0f2fe,stroke:#0284c7,color:#0f172a
+    classDef engine fill:#e0e7ff,stroke:#4f46e5,color:#0f172a
+    classDef gate fill:#fffbeb,stroke:#d97706,color:#0f172a
+    classDef good fill:#dcfce7,stroke:#059669,color:#0f172a
+    classDef bad fill:#ffe4e6,stroke:#e11d48,color:#0f172a
+    classDef warn fill:#ffedd5,stroke:#ea580c,color:#0f172a
+    classDef out fill:#ede9fe,stroke:#7c3aed,color:#0f172a
+    classDef neutral fill:#f1f5f9,stroke:#64748b,color:#0f172a
+    classDef ext fill:#cffafe,stroke:#0891b2,color:#0f172a
+    classDef forbidden fill:#ffe4e6,stroke:#e11d48,color:#0f172a,stroke-dasharray:6 4

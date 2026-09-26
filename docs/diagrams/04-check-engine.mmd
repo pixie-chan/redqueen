@@ -1,14 +1,29 @@
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"DejaVu Sans, Helvetica, sans-serif","fontSize":"14px","lineColor":"#64748b","clusterBkg":"#f8fafc","clusterBorder":"#cbd5e1"}}}%%
 flowchart TD
-    R["CHECKS registry<br/>id to OWASP, severity, impact, exact fix<br/>63 entries"] --> G["GROUPS<br/>12 groups"]
-    G --> SC["SCENARIOS<br/>recon, headers, misconfig,<br/>injection, auth, api, full"]
-    SC --> RN["RUNNERS dispatch"]
-    RN --> F1["check_* functions<br/>call bot.get()"]
-    F1 --> AD["bot.add()<br/>dedupe key: check + path + param,<br/>secrets redacted"]
-    AD --> VF{"verify pass<br/>CRITICAL or HIGH?"}
-    VF -- "re-tested" --> OK["verified"]
-    VF -- "not reproduced" --> DN["downgrade one level,<br/>confidence low"]
-    VF -- "lower severity" --> F2["findings[]"]
+    T["CHECK ENGINE · registry to report<br/>blue process + data · amber decision<br/>green verified · orange downgrade"]:::title ~~~ R[("CHECKS registry<br/>63 entries: id · OWASP · severity · fix")]:::engine
+    R --> G["GROUPS<br/>12 check groups"]:::engine
+    G --> SC["SCENARIOS<br/>recon · headers · misconfig<br/>injection · auth · api · full"]:::engine
+    SC --> RN["RUNNERS dispatch"]:::engine
+    RN --> F1["check_* functions<br/>bot.get with throttle"]:::engine
+    F1 --> AD["bot.add<br/>dedupe: check + path + param<br/>secrets redacted"]:::engine
+    AD --> V{"severity is<br/>CRITICAL or HIGH?"}:::gate
+    V -->|"lower severity"| F2[("findings list")]:::engine
+    V -->|yes| VER{"re-test:<br/>reproduced?"}:::gate
+    VER -->|yes| OK["verified"]:::good
+    VER -->|no| DN["downgrade one level<br/>confidence low"]:::warn
     OK --> F2
     DN --> F2
-    F2 --> SC2["score = 100 minus<br/>weighted severities"]
-    F2 --> O["terminal, HTML,<br/>JSON, CHECKLIST.md"]
+    F2 -->|weighs| SC2["score = 100 minus findings<br/>critical 25 · high 12<br/>medium 5 · low 2"]:::out
+    F2 -->|formats| O[/"terminal · report.html<br/>report.json · CHECKLIST.md"/]:::out
+
+    classDef title fill:#0f172a,stroke:#0f172a,color:#f8fafc
+    classDef cli fill:#e0f2fe,stroke:#0284c7,color:#0f172a
+    classDef engine fill:#e0e7ff,stroke:#4f46e5,color:#0f172a
+    classDef gate fill:#fffbeb,stroke:#d97706,color:#0f172a
+    classDef good fill:#dcfce7,stroke:#059669,color:#0f172a
+    classDef bad fill:#ffe4e6,stroke:#e11d48,color:#0f172a
+    classDef warn fill:#ffedd5,stroke:#ea580c,color:#0f172a
+    classDef out fill:#ede9fe,stroke:#7c3aed,color:#0f172a
+    classDef neutral fill:#f1f5f9,stroke:#64748b,color:#0f172a
+    classDef ext fill:#cffafe,stroke:#0891b2,color:#0f172a
+    classDef forbidden fill:#ffe4e6,stroke:#e11d48,color:#0f172a,stroke-dasharray:6 4

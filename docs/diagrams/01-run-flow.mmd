@@ -1,12 +1,28 @@
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"DejaVu Sans, Helvetica, sans-serif","fontSize":"14px","lineColor":"#64748b","clusterBkg":"#f8fafc","clusterBorder":"#cbd5e1"}}}%%
 flowchart TD
-    A["CLI<br/>--target --allow --i-own-this<br/>--scenario --wayback --ct-log"] --> G{"scope gate<br/>host in allowlist?"}
-    G -- "no" --> K["request never sent"]
-    G -- "no --i-own-this" --> P["passive mode<br/>recon groups only"]
-    G -- "yes" --> T["Transport<br/>5 req/s + jitter, budget 500,<br/>1 retry, redirect re-check"]
-    T --> D["Discovery<br/>3 passes + optional passive sources"]
-    D --> R["Scenario runners<br/>12 check groups, 63 checks"]
-    R --> V["Verify pass<br/>CRITICAL/HIGH re-tested once"]
-    V --> Z["Dedupe + score out of 100"]
-    Z --> O["terminal + report.html<br/>+ report.json + CHECKLIST.md"]
+    T["SCAN PIPELINE · redteam.py v1.1.0<br/>blue engine · amber gate · red blocked<br/>orange degraded · violet output"]:::title ~~~ A(["CLI invocation<br/>target · allow · scenario · flags"]):::cli
+    A --> G{"scope gate<br/>host in allowlist?"}:::gate
+    G -->|no| K(["request never sent"]):::bad
+    G -->|"in scope, no flag"| P["passive mode<br/>recon groups only"]:::neutral
+    G -->|yes| T2["Transport<br/>5 req/s + jitter · budget 500<br/>1 retry · redirect re-check"]:::engine
+    T2 --> D["Discovery<br/>3 passes + optional sources"]:::engine
+    D --> R["Runners<br/>12 groups · 63 checks"]:::engine
+    R --> V{"verify pass<br/>CRITICAL or HIGH?"}:::gate
+    V -->|reproduced| Z["dedupe + score / 100"]:::engine
+    V -->|"not reproduced"| DN["downgrade one level<br/>confidence low"]:::warn
+    DN --> Z
+    Z --> O[/"terminal · report.html<br/>report.json · CHECKLIST.md"/]:::out
     P --> O
-    K --> O
+    K -.->|"recorded as note"| O
+
+    classDef title fill:#0f172a,stroke:#0f172a,color:#f8fafc
+    classDef cli fill:#e0f2fe,stroke:#0284c7,color:#0f172a
+    classDef engine fill:#e0e7ff,stroke:#4f46e5,color:#0f172a
+    classDef gate fill:#fffbeb,stroke:#d97706,color:#0f172a
+    classDef good fill:#dcfce7,stroke:#059669,color:#0f172a
+    classDef bad fill:#ffe4e6,stroke:#e11d48,color:#0f172a
+    classDef warn fill:#ffedd5,stroke:#ea580c,color:#0f172a
+    classDef out fill:#ede9fe,stroke:#7c3aed,color:#0f172a
+    classDef neutral fill:#f1f5f9,stroke:#64748b,color:#0f172a
+    classDef ext fill:#cffafe,stroke:#0891b2,color:#0f172a
+    classDef forbidden fill:#ffe4e6,stroke:#e11d48,color:#0f172a,stroke-dasharray:6 4

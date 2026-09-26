@@ -1,19 +1,29 @@
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"DejaVu Sans, Helvetica, sans-serif","fontSize":"14px","lineColor":"#64748b","clusterBkg":"#f8fafc","clusterBorder":"#cbd5e1"}}}%%
 flowchart TD
-    A1["parts/p1 head + constants (70)"] --> A2["parts/p2a CHECKS registry (81)"]
-    A2 --> A2b["parts/p2b registry + groups + scenarios (145)"]
-    A2b --> A3["parts/p3 Transport: scope, throttle, retry (226)"]
-    A3 --> A4["parts/p4 Bot engine: discovery, JS mining, wayback, ct-log (418)"]
-    A4 --> A5["parts/p5 headers, CORS, cookies, JWT, host (229)"]
-    A5 --> A6["parts/p6 TLS, exposures, GraphQL (175)"]
-    A6 --> A7["parts/p7 injection, methods, stack traces (205)"]
-    A7 --> A8["parts/p8 secrets, auth, CSRF, rate limit (193)"]
-    A8 --> A9["parts/p9 terminal, JSON, checklist (108)"]
-    A9 --> A10["parts/p10 HTML report (156)"]
-    A10 --> A11["parts/p11 CLI + runners (149)"]
-    A11 --> BS["build.sh: ordered cat + compile check"]
-    BS --> RT["redteam.py: 2155 lines, stdlib only"]
-    RT --> Q["qa/qa.py: 16 assertion gates"]
-    H["qa/qx_harness.py (397): weak / strong / TLS target"] --> Q
-    U["qa/unit_sources.py (78): network stubbed"] --> Q
-    Q --> EX["examples/: sample reports + checklist"]
-    RES["research/redteam-bot/: 150+ sources"] -. grounding .-> RT
+    T["CODEBASE · 12 slices into 1 file<br/>blue source · amber build/gate · violet artifact · grey QA inputs"]:::title ~~~ C1["CORE<br/>p1 head (70)<br/>p2a registry (81)<br/>p2b groups + scenarios (145)"]:::engine
+    C1 --> C2["ENGINE<br/>p3 transport (226)<br/>p4 bot + discovery (418)"]:::engine
+    C2 --> C3["CHECKS<br/>p5 headers/CORS/JWT (229)<br/>p6 TLS/exposures (175)<br/>p7 injection (205)<br/>p8 secrets/auth (193)"]:::engine
+    C3 --> C4["OUTPUT<br/>p9 terminal/JSON/checklist (108)<br/>p10 HTML report (156)"]:::engine
+    C4 --> C5["CLI<br/>p11 runners + parser (149)"]:::engine
+    C5 --> BS["build.sh<br/>ordered cat + compile check"]:::gate
+    BS -->|assemble| RT["redteam.py<br/>2155 lines · stdlib only"]:::out
+    RT --> Q["qa/qa.py<br/>16 assertion gates"]:::gate
+    subgraph QA_BOX["QA · proves the build"]
+        H["qa/qx_harness.py (397)<br/>weak / strong / TLS target"]:::neutral --> Q
+        U["qa/unit_sources.py (78)<br/>network stubbed"]:::neutral --> Q
+    end
+    Q --> EX[/"examples/<br/>sample reports + checklist"/]:::out
+    RES[("research corpus<br/>150+ sources")]:::ext -.->|grounding| RT
+    style QA_BOX fill:#f8fafc,stroke:#94a3b8,color:#0f172a,stroke-width:1.5px
+
+    classDef title fill:#0f172a,stroke:#0f172a,color:#f8fafc
+    classDef cli fill:#e0f2fe,stroke:#0284c7,color:#0f172a
+    classDef engine fill:#e0e7ff,stroke:#4f46e5,color:#0f172a
+    classDef gate fill:#fffbeb,stroke:#d97706,color:#0f172a
+    classDef good fill:#dcfce7,stroke:#059669,color:#0f172a
+    classDef bad fill:#ffe4e6,stroke:#e11d48,color:#0f172a
+    classDef warn fill:#ffedd5,stroke:#ea580c,color:#0f172a
+    classDef out fill:#ede9fe,stroke:#7c3aed,color:#0f172a
+    classDef neutral fill:#f1f5f9,stroke:#64748b,color:#0f172a
+    classDef ext fill:#cffafe,stroke:#0891b2,color:#0f172a
+    classDef forbidden fill:#ffe4e6,stroke:#e11d48,color:#0f172a,stroke-dasharray:6 4

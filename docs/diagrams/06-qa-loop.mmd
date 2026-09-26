@@ -1,18 +1,29 @@
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"DejaVu Sans, Helvetica, sans-serif","fontSize":"14px","lineColor":"#64748b","clusterBkg":"#f8fafc","clusterBorder":"#cbd5e1"}}}%%
 flowchart LR
-    subgraph TG["qx_harness.py, local only"]
-        W1["weak mode:<br/>54 findings planted"]
-        S1["strong mode:<br/>hardened"]
-        T1["weak + TLS:<br/>self-signed, 10 day cert"]
+    T["QA LOOP · release gate<br/>blue targets · grey stubs · amber gates<br/>green pass · red block"]:::title ~~~ H1["weak harness<br/>54 known findings"]:::engine
+    subgraph T_BOX["targets under test"]
+        S1["strong harness<br/>hardened"]:::engine
+        T1["weak + TLS<br/>10-day self-signed"]:::engine
+        PG["passive run<br/>ownership flag off"]:::neutral
+        UN["unit_sources.py<br/>network stubbed"]:::neutral
     end
-    W1 --> RA["run: scenario full"]
-    S1 --> RB["run: scenario full"]
-    T1 --> RC["run: scenario headers"]
-    PG["run: passive<br/>no --i-own-this"] --> RD
-    UN["unit_sources.py<br/>network stubbed"] --> RE
-    RA --> GT["qa.py<br/>16 assertion gates"]
-    RB --> GT
-    RC --> GT
-    RD --> GT
-    RE --> GT
-    GT --> OKG["ALL PASS<br/>exit 0, samples refreshed"]
-    GT -- "any miss" --> FL["QA_RC=1, release blocked"]
+    H1 -->|"vulnerable target"| G{"qa.py<br/>16 assertion gates"}:::gate
+    S1 -->|"hardened target"| G
+    T1 -->|"TLS target"| G
+    PG -->|"passive target"| G
+    UN -->|"stubbed network"| G
+    G -->|pass| P(["ALL PASS · exit 0<br/>samples refreshed"]):::good
+    G -->|fail| X(["FAIL · QA_RC=1<br/>release blocked"]):::bad
+    style T_BOX fill:#f8fafc,stroke:#94a3b8,color:#0f172a,stroke-width:1.5px
+
+    classDef title fill:#0f172a,stroke:#0f172a,color:#f8fafc
+    classDef cli fill:#e0f2fe,stroke:#0284c7,color:#0f172a
+    classDef engine fill:#e0e7ff,stroke:#4f46e5,color:#0f172a
+    classDef gate fill:#fffbeb,stroke:#d97706,color:#0f172a
+    classDef good fill:#dcfce7,stroke:#059669,color:#0f172a
+    classDef bad fill:#ffe4e6,stroke:#e11d48,color:#0f172a
+    classDef warn fill:#ffedd5,stroke:#ea580c,color:#0f172a
+    classDef out fill:#ede9fe,stroke:#7c3aed,color:#0f172a
+    classDef neutral fill:#f1f5f9,stroke:#64748b,color:#0f172a
+    classDef ext fill:#cffafe,stroke:#0891b2,color:#0f172a
+    classDef forbidden fill:#ffe4e6,stroke:#e11d48,color:#0f172a,stroke-dasharray:6 4
